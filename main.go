@@ -20,18 +20,11 @@ import (
 )
 
 type dmsConfig struct {
-	Path                string
-	IfName              string
-	Http                string
-	FriendlyName        string
-	LogHeaders          bool
-	FFprobeCachePath    string
-	NoTranscode         bool
-	NoProbe             bool
-	StallEventSubscribe bool
-	NotifyInterval      time.Duration
-	IgnoreHidden        bool
-	IgnoreUnreadable    bool
+	dms.Config
+	Path             string
+	IfName           string
+	Http             string
+	FFprobeCachePath string
 }
 
 func (config *dmsConfig) load(configPath string) {
@@ -107,6 +100,7 @@ func main() {
 	}
 
 	dmsServer := &dms.Server{
+		Config: config.Config,
 		Interfaces: func(ifName string) (ifs []net.Interface) {
 			var err error
 			if ifName == "" {
@@ -138,12 +132,7 @@ func main() {
 			}
 			return conn
 		}(),
-		FriendlyName:   config.FriendlyName,
-		RootObjectPath: filepath.Clean(config.Path),
 		FFProbeCache:   cache,
-		LogHeaders:     config.LogHeaders,
-		NoTranscode:    config.NoTranscode,
-		NoProbe:        config.NoProbe,
 		Icons: []dms.Icon{
 			dms.Icon{
 				Width:      48,
@@ -160,10 +149,6 @@ func main() {
 				ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic 128.png")),
 			},
 		},
-		StallEventSubscribe: config.StallEventSubscribe,
-		NotifyInterval:      config.NotifyInterval,
-		IgnoreHidden:        config.IgnoreHidden,
-		IgnoreUnreadable:    config.IgnoreUnreadable,
 	}
 	go func() {
 		if err := dmsServer.Serve(); err != nil {

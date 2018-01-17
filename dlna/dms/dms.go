@@ -215,25 +215,17 @@ type Icon struct {
 	io.ReadSeeker
 }
 
-type Server struct {
-	HTTPConn       net.Listener
-	FriendlyName   string
-	Interfaces     []net.Interface
-	httpServeMux   *http.ServeMux
+type Config struct {
+	// Path to serve
 	RootObjectPath string
-	rootDescXML    []byte
-	rootDeviceUUID string
-	FFProbeCache   Cache
-	closed         chan struct{}
-	ssdpStopped    chan struct{}
-	// The service SOAP handler keyed by service URN.
-	services   map[string]UPnPService
+	// Name to announce
+	FriendlyName string
+	// Log heades of HTTP requests
 	LogHeaders bool
 	// Disable transcoding, and the resource elements implied in the CDS.
 	NoTranscode bool
 	// Disable media probing with ffprobe
 	NoProbe bool
-	Icons   []Icon
 	// Stall event subscription requests until they drop. A workaround for
 	// some bad clients.
 	StallEventSubscribe bool
@@ -243,6 +235,20 @@ type Server struct {
 	IgnoreHidden bool
 	// Ingnore unreadable files and directories
 	IgnoreUnreadable bool
+
+type Server struct {
+	Config
+	Icons      []Icon
+	HTTPConn   net.Listener
+	Interfaces []net.Interface
+
+	httpServeMux   *http.ServeMux
+	rootDescXML    []byte
+	rootDeviceUUID string
+	closed         chan struct{}
+	ssdpStopped    chan struct{}
+	// The service SOAP handler keyed by service URN.
+	services map[string]UPnPService
 }
 
 // UPnP SOAP service.
