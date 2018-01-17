@@ -51,11 +51,7 @@ func (config *dmsConfig) load(configPath string) {
 
 //default config
 var config = &dmsConfig{
-	Path:             "",
-	IfName:           "",
 	Http:             ":1338",
-	FriendlyName:     "",
-	LogHeaders:       false,
 	FFprobeCachePath: getDefaultFFprobeCachePath(),
 }
 
