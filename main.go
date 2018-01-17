@@ -132,7 +132,6 @@ func main() {
 			}
 			return conn
 		}(),
-		FFProbeCache:   cache,
 		Icons: []dms.Icon{
 			dms.Icon{
 				Width:      48,

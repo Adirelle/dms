@@ -16,7 +16,6 @@ import (
 	"github.com/anacrolix/dms/misc"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/anacrolix/dms/upnpav"
-	"github.com/anacrolix/ffprobe"
 )
 
 type contentDirectoryService struct {
@@ -76,41 +75,29 @@ func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fil
 	obj.AlbumArtURI = iconURI
 	obj.Class = "object.item." + mimeType.Type() + "Item"
 	var (
-		ffInfo        *ffprobe.Info
 		nativeBitrate uint
 		resDuration   string
+		resolution    string
 	)
-	if !me.NoProbe {
-		ffInfo, probeErr := me.ffmpegProbe(entryFilePath)
-		switch probeErr {
-		case nil:
-			if ffInfo != nil {
-				nativeBitrate, _ = ffInfo.Bitrate()
-				if d, err := ffInfo.Duration(); err == nil {
-					resDuration = misc.FormatDurationSexagesimal(d)
-				}
+	if ffInfo, err := me.ffProber.Probe(entryFilePath); err != nil {
+		log.Printf("error probing %s: %s", entryFilePath, err)
+	} else if ffInfo != nil {
+		nativeBitrate, _ = ffInfo.Bitrate()
+		if d, err := ffInfo.Duration(); err == nil {
+			resDuration = misc.FormatDurationSexagesimal(d)
+		}
+		for _, strm := range ffInfo.Streams {
+			if strm["codec_type"] == "video" {
+				width := strm["width"]
+				height := strm["height"]
+				resolution = fmt.Sprintf("%.0fx%.0f", width, height)
+				break
 			}
-		case ffprobe.ExeNotFound:
-		default:
-			log.Printf("error probing %s: %s", entryFilePath, probeErr)
 		}
 	}
 	if obj.Title == "" {
 		obj.Title = fileInfo.Name()
 	}
-	resolution := func() string {
-		if ffInfo != nil {
-			for _, strm := range ffInfo.Streams {
-				if strm["codec_type"] != "video" {
-					continue
-				}
-				width := strm["width"]
-				height := strm["height"]
-				return fmt.Sprintf("%.0fx%.0f", width, height)
-			}
-		}
-		return ""
-	}()
 	item := upnpav.Item{
 		Object: obj,
 		// Capacity: 1 for raw, 1 for icon, plus transcodes.
