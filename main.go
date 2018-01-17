@@ -6,15 +6,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/signal"
 	"os/user"
 	"path/filepath"
-	"runtime"
-	"sync"
 	"syscall"
 	"time"
 
@@ -70,32 +67,6 @@ func getDefaultFFprobeCachePath() (path string) {
 	}
 	path = filepath.Join(_user.HomeDir, ".dms-ffprobe-cache")
 	return
-}
-
-type fFprobeCache struct {
-	c *rrcache.RRCache
-	sync.Mutex
-}
-
-func (fc *fFprobeCache) Get(key interface{}) (value interface{}, ok bool) {
-	fc.Lock()
-	defer fc.Unlock()
-	return fc.c.Get(key)
-}
-
-func (fc *fFprobeCache) Set(key interface{}, value interface{}) {
-	fc.Lock()
-	defer fc.Unlock()
-	var size int64
-	for _, v := range []interface{}{key, value} {
-		b, err := json.Marshal(v)
-		if err != nil {
-			log.Printf("Could not marshal %v: %s", v, err)
-			continue
-		}
-		size += int64(len(b))
-	}
-	fc.c.Set(key, value, size)
 }
 
 func main() {
@@ -213,55 +184,4 @@ func main() {
 	if err := cache.save(config.FFprobeCachePath); err != nil {
 		log.Print(err)
 	}
-}
-
-func (cache *fFprobeCache) load(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	var items []dms.FfprobeCacheItem
-	err = dec.Decode(&items)
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		cache.Set(item.Key, item.Value)
-	}
-	log.Printf("added %d items from cache", len(items))
-	return nil
-}
-
-func (cache *fFprobeCache) save(path string) error {
-	cache.Lock()
-	items := cache.c.Items()
-	cache.Unlock()
-	f, err := ioutil.TempFile(filepath.Dir(path), filepath.Base(path))
-	if err != nil {
-		return err
-	}
-	enc := json.NewEncoder(f)
-	err = enc.Encode(items)
-	f.Close()
-	if err != nil {
-		os.Remove(f.Name())
-		return err
-	}
-	if runtime.GOOS == "windows" {
-		err = os.Remove(path)
-		if err == os.ErrNotExist {
-			err = nil
-		}
-	}
-	if err == nil {
-		err = os.Rename(f.Name(), path)
-	}
-	if err == nil {
-		log.Printf("saved cache with %d items", len(items))
-	} else {
-		os.Remove(f.Name())
-	}
-	return err
 }
