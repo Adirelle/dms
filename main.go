@@ -44,36 +44,26 @@ func (config *dmsConfig) load(configPath string) {
 	}
 }
 
-//default config
-var config = &dmsConfig{
-	Http:             ":1338",
-	FFprobeCachePath: getDefaultFFprobeCachePath(),
-}
-
-func getDefaultFFprobeCachePath() (path string) {
-	_user, err := user.Current()
-	if err != nil {
-		log.Print(err)
-		return
-	}
-	path = filepath.Join(_user.HomeDir, ".dms-ffprobe-cache")
-	return
-}
-
 func main() {
 	log.SetFlags(log.Ltime | log.Lshortfile)
 
-	path := flag.String("path", config.Path, "browse root path")
-	ifName := flag.String("ifname", config.IfName, "specific SSDP network interface")
-	http := flag.String("http", config.Http, "http server port")
-	friendlyName := flag.String("friendlyName", config.FriendlyName, "server friendly name")
-	logHeaders := flag.Bool("logHeaders", config.LogHeaders, "log HTTP headers")
-	fFprobeCachePath := flag.String("fFprobeCachePath", config.FFprobeCachePath, "path to FFprobe cache file")
-	configFilePath := flag.String("config", "", "json configuration file")
+	config := &dmsConfig{}
+	configFilePath := ""
+
+	flag.StringVar(&configFilePath, "config", "", "json configuration file")
+
+	flag.StringVar(&config.Path, "path", ".", "browse root path")
+	flag.StringVar(&config.Http, "http", ":1338", "http server port")
+	flag.StringVar(&config.IfName, "ifname", "", "specific SSDP network interface")
+	flag.StringVar(&config.FriendlyName, "friendlyName", "", "server friendly name")
+	flag.StringVar(&config.FFprobeCachePath, "fFprobeCachePath", getDefaultFFprobeCachePath(), "path to FFprobe cache file")
+
+	flag.DurationVar(&config.NotifyInterval, "notifyInterval", 30*time.Second, "interval between SSPD announces")
+
+	flag.BoolVar(&config.LogHeaders, "logHeaders", false, "log HTTP headers")
 	flag.BoolVar(&config.NoTranscode, "noTranscode", false, "disable transcoding")
 	flag.BoolVar(&config.NoProbe, "noProbe", false, "disable media probing with ffprobe")
 	flag.BoolVar(&config.StallEventSubscribe, "stallEventSubscribe", false, "workaround for some bad event subscribers")
-	flag.DurationVar(&config.NotifyInterval, "notifyInterval", 30*time.Second, "interval between SSPD announces")
 	flag.BoolVar(&config.IgnoreHidden, "ignoreHidden", false, "ignore hidden files and directories")
 	flag.BoolVar(&config.IgnoreUnreadable, "ignoreUnreadable", false, "ignore unreadable files and directories")
 
@@ -83,15 +73,8 @@ func main() {
 		log.Fatalf("%s: %s\n", "unexpected positional arguments", flag.Args())
 	}
 
-	config.Path = *path
-	config.IfName = *ifName
-	config.Http = *http
-	config.FriendlyName = *friendlyName
-	config.LogHeaders = *logHeaders
-	config.FFprobeCachePath = *fFprobeCachePath
-
-	if len(*configFilePath) > 0 {
-		config.load(*configFilePath)
+	if len(configFilePath) > 0 {
+		config.load(configFilePath)
 	}
 
 	var ffProber ffmpeg.FFProber
@@ -102,6 +85,11 @@ func main() {
 		if err := cache.load(config.FFprobeCachePath); err == nil {
 			log.Print(err)
 		}
+		defer func() {
+			if err := cache.save(config.FFprobeCachePath); err != nil {
+				log.Print(err)
+			}
+		}()
 
 		ffProber = ffmpeg.NewFFProber(config.NoProbe, cache)
 	} else {
@@ -165,13 +153,20 @@ func main() {
 		}
 	}()
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	<-sigs
 	err := dmsServer.Close()
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := cache.save(config.FFprobeCachePath); err != nil {
+}
+
+func getDefaultFFprobeCachePath() (path string) {
+	_user, err := user.Current()
+	if err != nil {
 		log.Print(err)
+		return
 	}
+	path = filepath.Join(_user.HomeDir, ".dms-ffprobe-cache")
+	return
 }
