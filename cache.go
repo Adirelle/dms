@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/anacrolix/dms/dlna/dms"
+	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/rrcache"
 )
 
@@ -46,7 +46,7 @@ func (fc *fFprobeCache) load(path string) error {
 	}
 	defer f.Close()
 	dec := json.NewDecoder(f)
-	var items []dms.FFProbeCacheItem
+	var items []ffmpeg.FFProbeCacheItem
 	err = dec.Decode(&items)
 	if err != nil {
 		return err

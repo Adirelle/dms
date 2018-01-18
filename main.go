@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/dlna/dms"
+	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/rrcache"
 )
 
@@ -25,6 +26,7 @@ type dmsConfig struct {
 	IfName           string
 	Http             string
 	FFprobeCachePath string
+	NoProbe          bool
 }
 
 func (config *dmsConfig) load(configPath string) {
@@ -92,11 +94,18 @@ func main() {
 		config.load(*configFilePath)
 	}
 
-	cache := &fFprobeCache{
-		c: rrcache.New(64 << 20),
-	}
-	if err := cache.load(config.FFprobeCachePath); err != nil {
-		log.Print(err)
+	var ffProber ffmpeg.FFProber
+	if !config.NoProbe {
+		cache := &fFprobeCache{
+			c: rrcache.New(64 << 20),
+		}
+		if err := cache.load(config.FFprobeCachePath); err == nil {
+			log.Print(err)
+		}
+
+		ffProber = ffmpeg.NewFFProber(config.NoProbe, cache)
+	} else {
+		ffProber = ffmpeg.NewFFProber(false, nil)
 	}
 
 	dmsServer := &dms.Server{
@@ -148,6 +157,7 @@ func main() {
 				ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic 128.png")),
 			},
 		},
+		FFProber: ffProber,
 	}
 	go func() {
 		if err := dmsServer.Serve(); err != nil {

@@ -79,7 +79,7 @@ func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fil
 		resDuration   string
 		resolution    string
 	)
-	if ffInfo, err := me.ffProber.Probe(entryFilePath); err != nil {
+	if ffInfo, err := me.FFProber.Probe(entryFilePath); err != nil {
 		log.Printf("error probing %s: %s", entryFilePath, err)
 	} else if ffInfo != nil {
 		nativeBitrate, _ = ffInfo.Bitrate()

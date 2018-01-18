@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/dlna"
+	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/soap"
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/transcode"
@@ -224,8 +225,6 @@ type Config struct {
 	LogHeaders bool
 	// Disable transcoding, and the resource elements implied in the CDS.
 	NoTranscode bool
-	// Disable media probing with ffprobe
-	NoProbe bool
 	// Stall event subscription requests until they drop. A workaround for
 	// some bad clients.
 	StallEventSubscribe bool
@@ -233,10 +232,8 @@ type Config struct {
 	NotifyInterval time.Duration
 	// Ignore hidden files and directories
 	IgnoreHidden bool
-	// Ingnore unreadable files and directories
+	// Ignore unreadable files and directories
 	IgnoreUnreadable bool
-	// The Cache to use for ffprobe results
-	FFProbeCache Cache
 }
 
 type Server struct {
@@ -244,6 +241,7 @@ type Server struct {
 	Icons      []Icon
 	HTTPConn   net.Listener
 	Interfaces []net.Interface
+	FFProber   ffmpeg.FFProber
 
 	httpServeMux   *http.ServeMux
 	rootDescXML    []byte
@@ -252,7 +250,6 @@ type Server struct {
 	ssdpStopped    chan struct{}
 	// The service SOAP handler keyed by service URN.
 	services map[string]UPnPService
-	ffProber FFProber
 }
 
 // UPnP SOAP service.
@@ -363,7 +360,7 @@ func (me *Server) serveDLNATranscode(w http.ResponseWriter, r *http.Request, pat
 	if !ok {
 		return
 	}
-	ffInfo, _ := me.ffProber.Probe(path_)
+	ffInfo, _ := me.FFProber.Probe(path_)
 	if ffInfo != nil {
 		if duration, err := ffInfo.Duration(); err == nil {
 			s := fmt.Sprintf("%f", duration.Seconds())
@@ -780,7 +777,6 @@ func (srv *Server) Serve() (err error) {
 		}
 		srv.Interfaces = tmp
 	}
-	srv.ffProber = NewFFProber(srv.NoProbe, srv.FFProbeCache)
 	srv.httpServeMux = http.NewServeMux()
 	srv.rootDeviceUUID = makeDeviceUuid(srv.FriendlyName)
 	srv.rootDescXML, err = xml.MarshalIndent(
