@@ -17,12 +17,13 @@ import (
 
 	"github.com/anacrolix/dms/dlna/dms"
 	"github.com/anacrolix/dms/ffmpeg"
+	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/rrcache"
 )
 
 type dmsConfig struct {
 	dms.Config
-	Path             string
+	filesystem.FsConfig
 	IfName           string
 	Http             string
 	FFprobeCachePath string
@@ -52,7 +53,7 @@ func main() {
 
 	flag.StringVar(&configFilePath, "config", "", "json configuration file")
 
-	flag.StringVar(&config.Path, "path", ".", "browse root path")
+	flag.StringVar(&config.Root, "path", ".", "browse root path")
 	flag.StringVar(&config.Http, "http", ":1338", "http server port")
 	flag.StringVar(&config.IfName, "ifname", "", "specific SSDP network interface")
 	flag.StringVar(&config.FriendlyName, "friendlyName", "", "server friendly name")
@@ -97,7 +98,9 @@ func main() {
 	}
 
 	dmsServer := &dms.Server{
-		Config: config.Config,
+		Config:     config.Config,
+		FFProber:   ffProber,
+		Filesystem: filesystem.New(config.FsConfig),
 		Interfaces: func(ifName string) (ifs []net.Interface) {
 			var err error
 			if ifName == "" {
@@ -145,7 +148,6 @@ func main() {
 				ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic 128.png")),
 			},
 		},
-		FFProber: ffProber,
 	}
 	go func() {
 		if err := dmsServer.Serve(); err != nil {

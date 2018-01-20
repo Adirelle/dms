@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/anacrolix/dms/filesystem"
+
 	"github.com/anacrolix/dms/dlna"
 	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/soap"
@@ -217,8 +219,6 @@ type Icon struct {
 }
 
 type Config struct {
-	// Path to serve
-	RootObjectPath string
 	// Name to announce
 	FriendlyName string
 	// Log heades of HTTP requests
@@ -230,10 +230,6 @@ type Config struct {
 	StallEventSubscribe bool
 	// Time interval between SSPD announces
 	NotifyInterval time.Duration
-	// Ignore hidden files and directories
-	IgnoreHidden bool
-	// Ignore unreadable files and directories
-	IgnoreUnreadable bool
 }
 
 type Server struct {
@@ -242,6 +238,7 @@ type Server struct {
 	HTTPConn   net.Listener
 	Interfaces []net.Interface
 	FFProber   ffmpeg.FFProber
+	Filesystem filesystem.Filesystem
 
 	httpServeMux   *http.ServeMux
 	rootDescXML    []byte
@@ -538,21 +535,21 @@ func (me *Server) serviceControlHandler(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func safeFilePath(root, given string) string {
-	return filepath.Join(root, filepath.FromSlash(path.Clean("/" + given))[1:])
-}
-
-func (s *Server) filePath(_path string) string {
-	return safeFilePath(s.RootObjectPath, _path)
-}
-
 func (me *Server) serveIcon(w http.ResponseWriter, r *http.Request) {
-	filePath := me.filePath(r.URL.Query().Get("path"))
+	o, err := me.Filesystem.GetObjectByID(r.URL.Query().Get("path"))
+	if err != nil {
+		me.httpError(w, r, err)
+		return
+	}
+	if o.IsDir() {
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
 	c := r.URL.Query().Get("c")
 	if c == "" {
 		c = "png"
 	}
-	cmd := exec.Command("ffmpegthumbnailer", "-i", filePath, "-o", "/dev/stdout", "-c"+c)
+	cmd := exec.Command("ffmpegthumbnailer", "-i", o.FilePath(), "-o", "/dev/stdout", "-c"+c)
 	// cmd.Stderr = os.Stderr
 	body, err := cmd.Output()
 	if err != nil {
@@ -672,36 +669,52 @@ func (server *Server) contentDirectoryEventSubHandler(w http.ResponseWriter, r *
 	}
 }
 
+func (server *Server) httpError(w http.ResponseWriter, req *http.Request, err error) {
+	status := http.StatusInternalServerError
+	if os.IsPermission(err) {
+		status = http.StatusForbidden
+	} else if os.IsNotExist(err) {
+		status = http.StatusNotFound
+	}
+	log.Printf("%s %s: %d %s", req.Method, req.URL, status, err.Error())
+	http.Error(w, err.Error(), status)
+}
+
 func (server *Server) initMux(mux *http.ServeMux) {
 	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
 		resp.Header().Set("content-type", "text/html")
-		err := rootTmpl.Execute(resp, struct {
-			Readonly bool
-			Path     string
-		}{
-			true,
-			server.RootObjectPath,
-		})
+		root, err := server.Filesystem.GetRootObject()
+		if err == nil {
+			err = rootTmpl.Execute(resp, struct {
+				Readonly bool
+				Path     string
+			}{
+				true,
+				root.FilePath(),
+			})
+		}
 		if err != nil {
-			log.Println(err)
+			server.httpError(resp, req, err)
 		}
 	})
 	mux.HandleFunc(contentDirectoryEventSubURL, server.contentDirectoryEventSubHandler)
 	mux.HandleFunc(iconPath, server.serveIcon)
 	mux.HandleFunc(resPath, func(w http.ResponseWriter, r *http.Request) {
-		filePath := server.filePath(r.URL.Query().Get("path"))
-		if ignored, err := server.IgnorePath(filePath); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		} else if ignored {
-			http.Error(w, "no such object", http.StatusNotFound)
+		o, err := server.Filesystem.GetObjectByID(r.URL.Query().Get("path"))
+		if err != nil {
+			server.httpError(w, r, err)
 			return
 		}
+		if o.IsDir() {
+			http.Error(w, "Forbidden", http.StatusForbidden)
+			return
+		}
+		filePath := o.FilePath()
 		k := r.URL.Query().Get("transcode")
 		if k == "" {
 			mimeType, err := MimeTypeByPath(filePath)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
+				server.httpError(w, r, err)
 				return
 			}
 			w.Header().Set("Content-Type", string(mimeType))
@@ -850,39 +863,4 @@ func (me *Server) location(ip net.IP) string {
 		Path: rootDescPath,
 	}
 	return url.String()
-}
-
-// IgnorePath detects if a file/directory should be ignored.
-func (server *Server) IgnorePath(path string) (bool, error) {
-	if !filepath.IsAbs(path) {
-		return false, fmt.Errorf("Path must be absolute: %s", path)
-	}
-	if server.IgnoreHidden {
-		if hidden, err := isHiddenPath(path); err != nil {
-			return false, err
-		} else if hidden {
-			log.Print(path, " ignored: hidden")
-			return true, nil
-		}
-	}
-	if server.IgnoreUnreadable {
-		if readable, err := isReadablePath(path); err != nil {
-			return false, err
-		} else if !readable {
-			log.Print(path, " ignored: unreadable")
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-func tryToOpenPath(path string) (bool, error) {
-	// Ugly but portable way to check if we can open a file/directory
-	if fh, err := os.Open(path); err == nil {
-		fh.Close()
-		return true, nil
-	} else if !os.IsPermission(err) {
-		return false, err
-	}
-	return false, nil
 }
