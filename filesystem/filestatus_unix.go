@@ -1,6 +1,6 @@
 //+build unix
 
-package dms
+package filesystem
 
 import (
 	"strings"

@@ -1,6 +1,6 @@
 //+build !unix,!windows
 
-package dms
+package filesystem
 
 func isHiddenPath(path string) (bool, error) {
 	return false, nil

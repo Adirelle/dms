@@ -151,3 +151,13 @@ func (d *directory) Children() (children []Object, err error) {
 	}
 	return
 }
+
+func tryToOpenPath(path string) (readable bool, err error) {
+	fh, err := os.Open(path)
+	fh.Close()
+	readable = err == nil
+	if os.IsPermission(err) {
+		err = nil
+	}
+	return
+}

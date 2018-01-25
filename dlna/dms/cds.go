@@ -7,12 +7,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/anacrolix/dms/dlna"
+	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/misc"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/anacrolix/dms/upnpav"
@@ -23,64 +22,174 @@ type contentDirectoryService struct {
 	upnp.Eventing
 }
 
-func (cds *contentDirectoryService) updateIDString() string {
-	return fmt.Sprintf("%d", uint32(os.Getpid()))
+var updateID = fmt.Sprintf("%d", uint32(os.Getpid()))
+var getSortCapabilities = map[string]string{"SortCaps": "dc:title"}
+var getSearchCapabilities = map[string]string{"SearchCaps": ""}
+
+func (cds *contentDirectoryService) Handle(action string, message []byte, r *http.Request) (map[string]string, error) {
+	switch action {
+	case "GetSystemUpdateID":
+		return map[string]string{"Id": updateID}, nil
+	case "GetSortCapabilities":
+		return getSortCapabilities, nil
+	case "GetSearchCapabilities":
+		return getSearchCapabilities, nil
+	case "Browse":
+		return cds.Browse(message, r)
+	default:
+		return nil, upnp.InvalidActionError
+	}
+}
+
+type browseQuery struct {
+	ObjectID       string
+	BrowseFlag     string
+	Filter         string
+	StartingIndex  int
+	RequestedCount int
+
+	req    *http.Request
+	object filesystem.Object
+}
+
+type browseResponse struct {
+	TotalMatches   int
+	NumberReturned int
+	Result         interface{}
+	UpdateID       string
+}
+
+func (cds *contentDirectoryService) Browse(message []byte, r *http.Request) (resp *browseResponse, err error) {
+	req := browseQuery{req: r}
+	if err = xml.Unmarshal(message, &req); err != nil {
+		return
+	}
+	if req.StartingIndex < 0 {
+		err = upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "invalid StartingIndex: %d", req.StartingIndex)
+		return
+	}
+	if req.RequestedCount < 0 {
+		err = upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "invalid RequestedCount: %d", req.RequestedCount)
+		return
+	}
+	req.object, err = cds.Filesystem.GetObjectByID(req.ObjectID)
+	if err != nil {
+		return
+	}
+	var items []interface{}
+	switch req.BrowseFlag {
+	case "BrowseDirectChildren":
+		items, resp.TotalMatches, err = cds.BrowseDirectChildren(req)
+	case "BrowseMetadata":
+		items, resp.TotalMatches, err = cds.BrowseMetadata(req)
+	default:
+		return nil, upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled browse flag: %v", req.BrowseFlag)
+	}
+	if err != nil {
+		return
+	}
+	xmlItems, err := xml.Marshal(items)
+	if err == nil {
+		resp.NumberReturned = len(items)
+		resp.UpdateID = updateID
+		resp.Result = didl_lite(string(xmlItems))
+	}
+	return
+}
+
+func (cds *contentDirectoryService) BrowseDirectChildren(req browseQuery) (items []interface{}, total int, err error) {
+	children, err := req.object.Children()
+	if err != nil {
+		return
+	}
+
+	total = len(children)
+	// TODO(anacrolix): Dig up why this special cast was added.
+	sort.Sort(sortableObjects{children, strings.Contains(req.req.Header.Get("UserAgent"), `AwoX/1.1`)})
+
+	if req.StartingIndex >= total {
+		return
+	} else if req.StartingIndex > 0 {
+		children = children[req.StartingIndex:]
+	}
+	if req.RequestedCount > 0 && req.RequestedCount < len(children) {
+		children = children[:req.RequestedCount]
+	}
+
+	items = make([]interface{}, len(children))
+	for _, child := range children {
+		item, itemErr := cds.GetObjectMetadata(child, req.req.Host)
+		if itemErr == nil {
+			items = append(items, item)
+		} else {
+			log.Printf("Ignored %s: %s", child.FilePath(), itemErr)
+		}
+	}
+	return
+}
+
+func (cds *contentDirectoryService) BrowseMetadata(req browseQuery) (items []interface{}, total int, err error) {
+	item, err := cds.GetObjectMetadata(req.object, req.req.Host)
+	if err == nil {
+		items = []interface{}{item}
+		total = 1
+	}
+	return
 }
 
 // Turns the given entry and DMS host into a UPnP object. A nil object is
 // returned if the entry is not of interest.
-func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fileInfo os.FileInfo, host, userAgent string) (ret interface{}, err error) {
-	entryFilePath := cdsObject.FilePath()
-	ignored, err := me.IgnorePath(entryFilePath)
-	if err != nil {
-		return
+func (cds *contentDirectoryService) GetObjectMetadata(obj filesystem.Object, host string) (interface{}, error) {
+	if obj.IsDir() {
+		return cds.GetDirectoryMetadata(obj, host)
 	}
-	if ignored {
-		return
-	}
-	obj := upnpav.Object{
-		ID:         cdsObject.ID(),
-		Restricted: 1,
-		ParentID:   cdsObject.ParentID(),
-	}
-	if fileInfo.IsDir() {
-		obj.Class = "object.container.storageFolder"
-		obj.Title = fileInfo.Name()
-		ret = upnpav.Container{Object: obj}
-		return
-	}
-	if !fileInfo.Mode().IsRegular() {
-		log.Printf("%s ignored: non-regular file", cdsObject.FilePath())
-		return
-	}
-	mimeType, err := MimeTypeByPath(entryFilePath)
+	return cds.GetFileMetadata(obj, host)
+}
+
+func (cds *contentDirectoryService) GetDirectoryMetadata(dir filesystem.Object, host string) (interface{}, error) {
+	return upnpav.Container{
+		Object: upnpav.Object{
+			ID:         dir.ID(),
+			Class:      "object.container.storageFolder",
+			ParentID:   dir.ParentID(),
+			Restricted: 1,
+			Title:      dir.Name(),
+		},
+	}, nil
+}
+
+func (cds *contentDirectoryService) GetFileMetadata(file filesystem.Object, host string) (ret interface{}, err error) {
+	mimeType, err := MimeTypeByPath(file.FilePath())
 	if err != nil {
 		return
 	}
 	if !mimeType.IsMedia() {
-		log.Printf("%s ignored: non-media file (%s)", cdsObject.FilePath(), mimeType)
+		log.Printf("%s ignored: non-media file (%s)", file.FilePath(), mimeType)
 		return
 	}
 	iconURI := (&url.URL{
-		Scheme: "http",
-		Host:   host,
-		Path:   iconPath,
-		RawQuery: url.Values{
-			"path": {cdsObject.Path},
-		}.Encode(),
+		Scheme:   "http",
+		Host:     host,
+		Path:     iconPath,
+		RawQuery: url.Values{"path": {file.ID()}}.Encode(),
 	}).String()
-	obj.Icon = iconURI
-	// TODO(anacrolix): This might not be necessary due to item res image
-	// element.
-	obj.AlbumArtURI = iconURI
-	obj.Class = "object.item." + mimeType.Type() + "Item"
+	obj := upnpav.Object{
+		ID:         file.ID(),
+		Restricted: 1,
+		ParentID:   file.ParentID(),
+		Class:      "object.item." + mimeType.Type() + "Item",
+		Title:      file.Name(),
+		Icon:       iconURI,
+		// TODO(anacrolix): This might not be necessary due to item res image element.
+		AlbumArtURI: iconURI,
+	}
 	var (
 		nativeBitrate uint
 		resDuration   string
 		resolution    string
 	)
-	if ffInfo, err := me.FFProber.Probe(entryFilePath); err != nil {
-		log.Printf("error probing %s: %s", entryFilePath, err)
+	if ffInfo, err := cds.FFProber.Probe(file.FilePath()); err != nil {
+		log.Printf("error probing %s: %s", file.FilePath(), err)
 	} else if ffInfo != nil {
 		nativeBitrate, _ = ffInfo.Bitrate()
 		if d, err := ffInfo.Duration(); err == nil {
@@ -95,9 +204,6 @@ func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fil
 			}
 		}
 	}
-	if obj.Title == "" {
-		obj.Title = fileInfo.Name()
-	}
 	item := upnpav.Item{
 		Object: obj,
 		// Capacity: 1 for raw, 1 for icon, plus transcodes.
@@ -105,36 +211,29 @@ func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fil
 	}
 	item.Res = append(item.Res, upnpav.Resource{
 		URL: (&url.URL{
-			Scheme: "http",
-			Host:   host,
-			Path:   resPath,
-			RawQuery: url.Values{
-				"path": {cdsObject.Path},
-			}.Encode(),
+			Scheme:   "http",
+			Host:     host,
+			Path:     resPath,
+			RawQuery: url.Values{"path": {file.ID()}}.Encode(),
 		}).String(),
-		ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", mimeType, dlna.ContentFeatures{
-			SupportRange: true,
-		}.String()),
-		Bitrate:    nativeBitrate,
-		Duration:   resDuration,
-		Size:       uint64(fileInfo.Size()),
-		Resolution: resolution,
+		ProtocolInfo: fmt.Sprintf("http-get:*:%s:%s", mimeType, dlna.ContentFeatures{SupportRange: true}.String()),
+		Bitrate:      nativeBitrate,
+		Duration:     resDuration,
+		Size:         uint64(file.Size()),
+		Resolution:   resolution,
 	})
 	if mimeType.IsVideo() {
-		if !me.NoTranscode {
-			item.Res = append(item.Res, transcodeResources(host, cdsObject.Path, resolution, resDuration)...)
+		if !cds.NoTranscode {
+			item.Res = append(item.Res, transcodeResources(host, file.ID(), resolution, resDuration)...)
 		}
 	}
 	if mimeType.IsVideo() || mimeType.IsImage() {
 		item.Res = append(item.Res, upnpav.Resource{
 			URL: (&url.URL{
-				Scheme: "http",
-				Host:   host,
-				Path:   iconPath,
-				RawQuery: url.Values{
-					"path": {cdsObject.Path},
-					"c":    {"jpeg"},
-				}.Encode(),
+				Scheme:   "http",
+				Host:     host,
+				Path:     iconPath,
+				RawQuery: url.Values{"path": {file.ID()}, "c": {"jpeg"}}.Encode(),
 			}).String(),
 			ProtocolInfo: "http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_TN",
 		})
@@ -143,235 +242,28 @@ func (me *contentDirectoryService) cdsObjectToUpnpavObject(cdsObject object, fil
 	return
 }
 
-// Returns all the upnpav objects in a directory.
-func (me *contentDirectoryService) readContainer(o object, host, userAgent string) (ret []interface{}, err error) {
-	sfis := sortableFileInfoSlice{
-		// TODO(anacrolix): Dig up why this special cast was added.
-		FoldersLast: strings.Contains(userAgent, `AwoX/1.1`),
-	}
-	sfis.fileInfoSlice, err = o.readDir()
-	if err != nil {
-		return
-	}
-	sort.Sort(sfis)
-	for _, fi := range sfis.fileInfoSlice {
-		child := object{path.Join(o.Path, fi.Name()), me.RootObjectPath}
-		obj, err := me.cdsObjectToUpnpavObject(child, fi, host, userAgent)
-		if err != nil {
-			log.Printf("error with %s: %s", child.FilePath(), err)
-			continue
-		}
-		if obj != nil {
-			ret = append(ret, obj)
-		}
-	}
-	return
+type sortableObjects struct {
+	objets      []filesystem.Object
+	foldersLast bool
 }
 
-type browse struct {
-	ObjectID       string
-	BrowseFlag     string
-	Filter         string
-	StartingIndex  int
-	RequestedCount int
+func (so sortableObjects) Len() int {
+	return len(so.objets)
 }
 
-// ContentDirectory object from ObjectID.
-func (me *contentDirectoryService) objectFromID(id string) (o object, err error) {
-	o.Path, err = url.QueryUnescape(id)
-	if err != nil {
-		return
+func (so sortableObjects) Less(i, j int) bool {
+	iIsDir := so.objets[i].IsDir()
+	jIsDir := so.objets[j].IsDir()
+	if iIsDir == jIsDir {
+		return strings.ToLower(so.objets[i].Name()) < strings.ToLower(so.objets[j].Name())
 	}
-	if o.Path == "0" {
-		o.Path = "/"
+	less := iIsDir && !jIsDir
+	if so.foldersLast {
+		return !less
 	}
-	o.Path = path.Clean(o.Path)
-	if !path.IsAbs(o.Path) {
-		err = fmt.Errorf("bad ObjectID %v", o.Path)
-		return
-	}
-	o.RootObjectPath = me.RootObjectPath
-	return
+	return less
 }
 
-func (me *contentDirectoryService) Handle(action string, argsXML []byte, r *http.Request) (map[string]string, error) {
-	host := r.Host
-	userAgent := r.UserAgent()
-	switch action {
-	case "GetSystemUpdateID":
-		return map[string]string{
-			"Id": me.updateIDString(),
-		}, nil
-	case "GetSortCapabilities":
-		return map[string]string{
-			"SortCaps": "dc:title",
-		}, nil
-	case "Browse":
-		var browse browse
-		if err := xml.Unmarshal([]byte(argsXML), &browse); err != nil {
-			return nil, err
-		}
-		obj, err := me.objectFromID(browse.ObjectID)
-		if err != nil {
-			return nil, upnp.Errorf(upnpav.NoSuchObjectErrorCode, err.Error())
-		}
-		switch browse.BrowseFlag {
-		case "BrowseDirectChildren":
-			objs, err := me.readContainer(obj, host, userAgent)
-			if err != nil {
-				return nil, upnp.Errorf(upnpav.NoSuchObjectErrorCode, err.Error())
-			}
-			totalMatches := len(objs)
-			objs = objs[func() (low int) {
-				low = browse.StartingIndex
-				if low > len(objs) {
-					low = len(objs)
-				}
-				return
-			}():]
-			if browse.RequestedCount != 0 && int(browse.RequestedCount) < len(objs) {
-				objs = objs[:browse.RequestedCount]
-			}
-			result, err := xml.Marshal(objs)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]string{
-				"TotalMatches":   fmt.Sprint(totalMatches),
-				"NumberReturned": fmt.Sprint(len(objs)),
-				"Result":         didl_lite(string(result)),
-				"UpdateID":       me.updateIDString(),
-			}, nil
-		case "BrowseMetadata":
-			fileInfo, err := os.Stat(obj.FilePath())
-			if err != nil {
-				if os.IsNotExist(err) {
-					return nil, &upnp.Error{
-						Code: upnpav.NoSuchObjectErrorCode,
-						Desc: err.Error(),
-					}
-				}
-				return nil, err
-			}
-			upnp, err := me.cdsObjectToUpnpavObject(obj, fileInfo, host, userAgent)
-			if err != nil {
-				return nil, err
-			}
-			buf, err := xml.Marshal(upnp)
-			if err != nil {
-				return nil, err
-			}
-			return map[string]string{
-				"TotalMatches":   "1",
-				"NumberReturned": "1",
-				"Result":         didl_lite(func() string { return string(buf) }()),
-				"UpdateID":       me.updateIDString(),
-			}, nil
-		default:
-			return nil, upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled browse flag: %v", browse.BrowseFlag)
-		}
-	case "GetSearchCapabilities":
-		return map[string]string{
-			"SearchCaps": "",
-		}, nil
-	default:
-		return nil, upnp.InvalidActionError
-	}
-}
-
-// Represents a ContentDirectory object.
-type object struct {
-	Path           string // The cleaned, absolute path for the object relative to the server.
-	RootObjectPath string
-}
-
-// Returns the number of children this object has, such as for a container.
-func (cds *contentDirectoryService) objectChildCount(me object) int {
-	objs, err := cds.readContainer(me, "", "")
-	if err != nil {
-		log.Printf("error reading container: %s", err)
-	}
-	return len(objs)
-}
-
-func (cds *contentDirectoryService) objectHasChildren(obj object) bool {
-	return cds.objectChildCount(obj) != 0
-}
-
-// Returns the actual local filesystem path for the object.
-func (o *object) FilePath() string {
-	return filepath.Join(o.RootObjectPath, filepath.FromSlash(o.Path))
-}
-
-// Returns the ObjectID for the object. This is used in various ContentDirectory actions.
-func (o object) ID() string {
-	if !path.IsAbs(o.Path) {
-		log.Panicf("Relative object path: %s", o.Path)
-	}
-	if len(o.Path) == 1 {
-		return "0"
-	}
-	return url.QueryEscape(o.Path)
-}
-
-func (o *object) IsRoot() bool {
-	return o.Path == "/"
-}
-
-// Returns the object's parent ObjectID. Fortunately it can be deduced from the
-// ObjectID (for now).
-func (o object) ParentID() string {
-	if o.IsRoot() {
-		return "-1"
-	}
-	o.Path = path.Dir(o.Path)
-	return o.ID()
-}
-
-// This function exists rather than just calling os.(*File).Readdir because I
-// want to stat(), not lstat() each entry.
-func (o *object) readDir() (fis []os.FileInfo, err error) {
-	dirPath := o.FilePath()
-	dirFile, err := os.Open(dirPath)
-	if err != nil {
-		return
-	}
-	defer dirFile.Close()
-	var dirContent []string
-	dirContent, err = dirFile.Readdirnames(-1)
-	if err != nil {
-		return
-	}
-	fis = make([]os.FileInfo, 0, len(dirContent))
-	for _, file := range dirContent {
-		fi, err := os.Stat(filepath.Join(dirPath, file))
-		if err != nil {
-			continue
-		}
-		fis = append(fis, fi)
-	}
-	return
-}
-
-type sortableFileInfoSlice struct {
-	fileInfoSlice []os.FileInfo
-	FoldersLast   bool
-}
-
-func (me sortableFileInfoSlice) Len() int {
-	return len(me.fileInfoSlice)
-}
-
-func (me sortableFileInfoSlice) Less(i, j int) bool {
-	if me.fileInfoSlice[i].IsDir() && !me.fileInfoSlice[j].IsDir() {
-		return !me.FoldersLast
-	}
-	if !me.fileInfoSlice[i].IsDir() && me.fileInfoSlice[j].IsDir() {
-		return me.FoldersLast
-	}
-	return strings.ToLower(me.fileInfoSlice[i].Name()) < strings.ToLower(me.fileInfoSlice[j].Name())
-}
-
-func (me sortableFileInfoSlice) Swap(i, j int) {
-	me.fileInfoSlice[i], me.fileInfoSlice[j] = me.fileInfoSlice[j], me.fileInfoSlice[i]
+func (so sortableObjects) Swap(i, j int) {
+	so.objets[i], so.objets[j] = so.objets[j], so.objets[i]
 }

@@ -1,6 +1,6 @@
 //+build windows
 
-package dms
+package filesystem
 
 import (
 	"path/filepath"
