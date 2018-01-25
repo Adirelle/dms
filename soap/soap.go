@@ -51,6 +51,10 @@ func NewFault(s string, detail interface{}) *Fault {
 	}
 }
 
+func (f *Fault) Error() string {
+	return f.FaultString
+}
+
 type Envelope struct {
 	XMLName       xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
 	EncodingStyle string   `xml:"encodingStyle,attr"`
