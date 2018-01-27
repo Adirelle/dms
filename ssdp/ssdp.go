@@ -89,6 +89,8 @@ type Server struct {
 	UUID           string
 	NotifyInterval time.Duration
 	closed         chan struct{}
+	BootID         string
+	ConfigID       string
 }
 
 func makeConn(ifi net.Interface) (ret *net.UDPConn, err error) {
@@ -176,6 +178,8 @@ func (me *Server) makeNotifyMessage(target, nts string, extraHdrs [][2]string) [
 		{"NTS", nts},
 		{"SERVER", me.Server},
 		{"USN", me.usnFromTarget(target)},
+		{"BOOTID.UPNP.ORG", me.BootID},
+		{"CONFIGID.UPNP.ORG", me.ConfigID},
 	}
 	buf := &bytes.Buffer{}
 	fmt.Fprint(buf, "NOTIFY * HTTP/1.1\r\n")
@@ -319,6 +323,8 @@ func (me *Server) makeResponse(ip net.IP, targ string, req *http.Request) (ret [
 		{"SERVER", me.Server},
 		{"ST", targ},
 		{"USN", me.usnFromTarget(targ)},
+		{"BOOTID.UPNP.ORG", me.BootID},
+		{"CONFIGID.UPNP.ORG", me.ConfigID},
 	} {
 		resp.Header.Set(pair[0], pair[1])
 	}

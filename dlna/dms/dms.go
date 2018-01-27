@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"io/ioutil"
 	"log"
@@ -18,6 +19,8 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -176,6 +179,8 @@ func (me *Server) ssdpInterface(if_ net.Interface) {
 		Server:         serverField,
 		UUID:           me.rootDeviceUUID,
 		NotifyInterval: me.NotifyInterval,
+		BootID:         me.bootID,
+		ConfigID:       me.configID,
 	}
 	if err := s.Init(); err != nil {
 		if if_.Flags&ssdpInterfaceFlags != ssdpInterfaceFlags {
@@ -247,6 +252,8 @@ type Server struct {
 	httpServeMux   *http.ServeMux
 	rootDescXML    []byte
 	rootDeviceUUID string
+	bootID         string
+	configID       string
 	closed         chan struct{}
 	ssdpStopped    chan struct{}
 	// The service SOAP handler keyed by service URN.
@@ -814,6 +821,8 @@ func (srv *Server) Serve() (err error) {
 		return
 	}
 	srv.rootDescXML = append([]byte(`<?xml version="1.0"?>`), srv.rootDescXML...)
+	srv.bootID = strconv.FormatInt(int64(srv.getBootID()), 10)
+	srv.configID = strconv.FormatInt(int64(srv.getConfigID()), 10)
 	log.Println("HTTP srv on", srv.HTTPConn.Addr())
 	srv.initMux(srv.httpServeMux)
 	srv.ssdpStopped = make(chan struct{})
@@ -886,4 +895,19 @@ func tryToOpenPath(path string) (bool, error) {
 		return false, err
 	}
 	return false, nil
+}
+
+// getBootID generates a boot ID based on DMS start time
+func (srv *Server) getBootID() int32 {
+	return int32(startTime.Unix() & 0x7FFF)
+}
+
+// getConfigID generates configID based no the checksum of the XML descriptors
+func (srv *Server) getConfigID() int32 {
+	h := crc32.NewIEEE()
+	h.Write(srv.rootDescXML)
+	for _, s := range services {
+		h.Write([]byte(s.SCPD))
+	}
+	return int32(h.Sum32() & 0x0FFF)
 }
