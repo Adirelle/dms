@@ -32,7 +32,6 @@ import (
 )
 
 const (
-	serverField                 = "Linux/3.4 DLNADOC/1.50 UPnP/1.0 DMS/1.0"
 	rootDeviceType              = "urn:schemas-upnp-org:device:MediaServer:1"
 	rootDeviceModelName         = "dms 1.0"
 	resPath                     = "/res"
@@ -43,6 +42,8 @@ const (
 	serviceControlURL           = "/ctl"
 	deviceIconPath              = "/deviceIcon"
 )
+
+var serverField = fmt.Sprintf("%S/1.0 DLNADOC/1.50 UPnP/2.0 DMS/1.0", strings.Title(runtime.GOOS))
 
 type transcodeSpec struct {
 	mimeType        string
