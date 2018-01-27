@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anacrolix/dms/ssdp"
+
 	"github.com/anacrolix/dms/dlna/dms"
 	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/rrcache"
@@ -29,7 +31,7 @@ type dmsConfig struct {
 	NoProbe          bool
 }
 
-func (config *dmsConfig) load(configPath string) {
+func (c *dmsConfig) load(configPath string) {
 	file, err := os.Open(configPath)
 	if err != nil {
 		log.Printf("config error (config file: '%s'): %v\n", configPath, err)
@@ -37,11 +39,33 @@ func (config *dmsConfig) load(configPath string) {
 	}
 	defer file.Close()
 	decoder := json.NewDecoder(file)
-	err = decoder.Decode(&config)
+	err = decoder.Decode(&c)
 	if err != nil {
 		log.Printf("config error: %v\n", err)
 		return
 	}
+}
+
+func (c *dmsConfig) Interfaces() ([]net.Interface, error) {
+	if c.IfName == "" {
+		return net.Interfaces()
+	}
+	iface, err := net.InterfaceByName(c.IfName)
+	return []net.Interface{*iface}, err
+}
+
+func (c *dmsConfig) ValidInterfaces() (ret []net.Interface, err error) {
+	ifaces, err := c.Interfaces()
+	if err != nil {
+		return
+	}
+	ret = make([]net.Interface, len(ifaces))
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp != 0 && iface.MTU > 0 {
+			ret = append(ret, iface)
+		}
+	}
+	return
 }
 
 func main() {
@@ -96,8 +120,24 @@ func main() {
 		ffProber = ffmpeg.NewFFProber(false, nil)
 	}
 
-	dmsServer := &dms.Server{
-		Config: config.Config,
+	httpServer := startHTTPServer(config, ffProber)
+	defer func() {
+		if err := httpServer.Close(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	adv := startAdvertiser(config, httpServer)
+	defer adv.Stop()
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
+	<-sigs
+}
+
+func startHTTPServer(config *dmsConfig, ffprober *ffmpeg.FFProber) (httpServer *dms.Server) {
+	httpServer = &dms.Server{
+		Config: dmsConfig,
 		Interfaces: func(ifName string) (ifs []net.Interface) {
 			var err error
 			if ifName == "" {
@@ -121,7 +161,7 @@ func main() {
 			}
 			ifs = tmp
 			return
-		}(config.IfName),
+		}(dmsConfig.IfName),
 		HTTPConn: func() net.Listener {
 			conn, err := net.Listen("tcp", config.Http)
 			if err != nil {
@@ -147,18 +187,42 @@ func main() {
 		},
 		FFProber: ffProber,
 	}
-	go func() {
-		if err := dmsServer.Serve(); err != nil {
-			log.Fatal(err)
-		}
-	}()
-	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
-	<-sigs
-	err := dmsServer.Close()
+	return
+}
+
+func startAdvertiser(config *dmsConfig, httpServer *dms.Server) *ssdp.Advertiser {
+	adv := ssdp.NewAdvertiser(ssdp.SSDPConfig{
+		NotifyInterval: config.NotifyInterval,
+		Interfaces:     config.ValidInterfaces,
+		Location:       httpServer.DDDLocation,
+		Server:         dms.ServerToken,
+		Services:       httpServer.ServiceTypes(),
+		Devices:        httpServer.Devices(),
+		UUID:           httpServer.DeviceUUID(),
+		BootID:         httpServer.GetBootID(),
+		ConfigID:       httpServer.GetConfigID(),
+	})
+	go adv.Serve()
+	return adv
+}
+
+func (cache *fFprobeCache) load(path string) error {
+	f, err := os.Open(path)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
+	defer f.Close()
+	dec := json.NewDecoder(f)
+	var items []dms.FfprobeCacheItem
+	err = dec.Decode(&items)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		cache.Set(item.Key, item.Value)
+	}
+	log.Printf("added %d items from cache", len(items))
+	return nil
 }
 
 func getDefaultFFprobeCachePath() (path string) {

@@ -20,14 +20,12 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/anacrolix/dms/dlna"
 	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/soap"
-	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/transcode"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/anacrolix/dms/upnpav"
@@ -46,7 +44,7 @@ const (
 	deviceIconPath              = "/deviceIcon"
 )
 
-var serverField = fmt.Sprintf("%S/1.0 DLNADOC/1.50 UPnP/2.0 DMS/1.0", strings.Title(runtime.GOOS))
+var ServerToken = fmt.Sprintf("%s/1.0 DLNADOC/1.50 UPnP/2.0 DMS/1.0", strings.Title(runtime.GOOS))
 
 type transcodeSpec struct {
 	mimeType        string
@@ -64,10 +62,10 @@ var transcodes = map[string]transcodeSpec{
 	"chromecast": {mimeType: "video/mp4", Transcode: transcode.ChromecastTranscode},
 }
 
-func makeDeviceUuid(unique string) string {
+func (me *Server) DeviceUUID() string {
 	h := md5.New()
-	if _, err := io.WriteString(h, unique); err != nil {
-		log.Panicf("makeDeviceUuid write failed: %s", err)
+	if _, err := io.WriteString(h, me.FriendlyName); err != nil {
+		log.Panicf("DeviceUUUID write failed: %s", err)
 	}
 	buf := h.Sum(nil)
 	return upnp.FormatUUID(buf)
@@ -105,18 +103,19 @@ func init() {
 	}
 }
 
-func devices() []string {
+func (me *Server) Devices() []string {
 	return []string{
 		"urn:schemas-upnp-org:device:MediaServer:1",
 	}
 }
 
-func serviceTypes() (ret []string) {
+func (me *Server) ServiceTypes() (ret []string) {
 	for _, s := range services {
 		ret = append(ret, s.ServiceType)
 	}
 	return
 }
+
 func (me *Server) httpPort() int {
 	return me.HTTPConn.Addr().(*net.TCPAddr).Port
 }
@@ -130,7 +129,7 @@ func (me *Server) serveHTTP() error {
 				fmt.Fprintln(os.Stderr)
 			}
 			w.Header().Set("Ext", "")
-			w.Header().Set("Server", serverField)
+			w.Header().Set("Server", ServerToken)
 			me.httpServeMux.ServeHTTP(&mitmRespWriter{
 				ResponseWriter: w,
 				logHeader:      me.LogHeaders,
@@ -143,72 +142,6 @@ func (me *Server) serveHTTP() error {
 		return nil
 	default:
 		return err
-	}
-}
-
-// An interface with these flags should be valid for SSDP.
-const ssdpInterfaceFlags = net.FlagUp | net.FlagMulticast
-
-func (me *Server) doSSDP() {
-	active := 0
-	stopped := make(chan struct{})
-	for _, if_ := range me.Interfaces {
-		active++
-		go func(if_ net.Interface) {
-			defer func() {
-				stopped <- struct{}{}
-			}()
-			me.ssdpInterface(if_)
-		}(if_)
-	}
-	for active > 0 {
-		<-stopped
-		active--
-	}
-}
-
-// Run SSDP server on an interface.
-func (me *Server) ssdpInterface(if_ net.Interface) {
-	s := ssdp.Server{
-		Interface: if_,
-		Devices:   devices(),
-		Services:  serviceTypes(),
-		Location: func(ip net.IP) string {
-			return me.location(ip)
-		},
-		Server:         serverField,
-		UUID:           me.rootDeviceUUID,
-		NotifyInterval: me.NotifyInterval,
-		BootID:         me.bootID,
-		ConfigID:       me.configID,
-	}
-	if err := s.Init(); err != nil {
-		if if_.Flags&ssdpInterfaceFlags != ssdpInterfaceFlags {
-			// Didn't expect it to work anyway.
-			return
-		}
-		if strings.Contains(err.Error(), "listen") {
-			// OSX has a lot of dud interfaces. Failure to create a socket on
-			// the interface are what we're expecting if the interface is no
-			// good.
-			return
-		}
-		log.Printf("error creating ssdp server on %s: %s", if_.Name, err)
-		return
-	}
-	defer s.Close()
-	log.Println("started SSDP on", if_.Name)
-	stopped := make(chan struct{})
-	go func() {
-		defer close(stopped)
-		if err := s.Serve(); err != nil {
-			log.Printf("%q: %q\n", if_.Name, err)
-		}
-	}()
-	select {
-	case <-me.closed:
-		// Returning will close the server.
-	case <-stopped:
 	}
 }
 
@@ -234,8 +167,6 @@ type Config struct {
 	// Stall event subscription requests until they drop. A workaround for
 	// some bad clients.
 	StallEventSubscribe bool
-	// Time interval between SSPD announces
-	NotifyInterval time.Duration
 	// Ignore hidden files and directories
 	IgnoreHidden bool
 	// Ignore unreadable files and directories
@@ -530,7 +461,7 @@ func (me *Server) serviceControlHandler(w http.ResponseWriter, r *http.Request) 
 	//log.Println(r.UserAgent())
 	w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
 	w.Header().Set("Ext", "")
-	w.Header().Set("Server", serverField)
+	w.Header().Set("Server", ServerToken)
 	soapRespXML, code := func() ([]byte, int) {
 		respArgs, err := me.soapActionResponse(soapAction, env.Body.Action, r)
 		if err != nil {
@@ -730,7 +661,7 @@ func (server *Server) initMux(mux *http.ServeMux) {
 	mux.HandleFunc(rootDescPath, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", `text/xml; charset="utf-8"`)
 		w.Header().Set("content-length", fmt.Sprint(len(server.rootDescXML)))
-		w.Header().Set("server", serverField)
+		w.Header().Set("server", ServerToken)
 		w.Write(server.rootDescXML)
 	})
 	handleSCPDs(mux)
@@ -786,7 +717,6 @@ func (srv *Server) Serve() (err error) {
 		srv.Interfaces = tmp
 	}
 	srv.httpServeMux = http.NewServeMux()
-	srv.rootDeviceUUID = makeDeviceUuid(srv.FriendlyName)
 	srv.rootDescXML, err = xml.MarshalIndent(
 		upnp.DeviceDesc{
 			SpecVersion: upnp.SpecVersion{Major: 1, Minor: 0},
@@ -795,7 +725,7 @@ func (srv *Server) Serve() (err error) {
 				FriendlyName: srv.FriendlyName,
 				Manufacturer: "Matt Joiner <anacrolix@gmail.com>",
 				ModelName:    rootDeviceModelName,
-				UDN:          srv.rootDeviceUUID,
+				UDN:          srv.DeviceUUID(),
 				ServiceList: func() (ss []upnp.Service) {
 					for _, s := range services {
 						ss = append(ss, s.Service)
@@ -821,22 +751,14 @@ func (srv *Server) Serve() (err error) {
 		return
 	}
 	srv.rootDescXML = append([]byte(`<?xml version="1.0"?>`), srv.rootDescXML...)
-	srv.bootID = strconv.FormatInt(int64(srv.getBootID()), 10)
-	srv.configID = strconv.FormatInt(int64(srv.getConfigID()), 10)
 	log.Println("HTTP srv on", srv.HTTPConn.Addr())
 	srv.initMux(srv.httpServeMux)
-	srv.ssdpStopped = make(chan struct{})
-	go func() {
-		srv.doSSDP()
-		close(srv.ssdpStopped)
-	}()
 	return srv.serveHTTP()
 }
 
 func (srv *Server) Close() (err error) {
 	close(srv.closed)
 	err = srv.HTTPConn.Close()
-	<-srv.ssdpStopped
 	return
 }
 
@@ -850,7 +772,7 @@ func didl_lite(chardata string) string {
 		`</DIDL-Lite>`
 }
 
-func (me *Server) location(ip net.IP) string {
+func (me *Server) DDDLocation(ip net.IP) string {
 	url := url.URL{
 		Scheme: "http",
 		Host: (&net.TCPAddr{
@@ -898,12 +820,12 @@ func tryToOpenPath(path string) (bool, error) {
 }
 
 // getBootID generates a boot ID based on DMS start time
-func (srv *Server) getBootID() int32 {
+func (srv *Server) GetBootID() int32 {
 	return int32(startTime.Unix() & 0x7FFF)
 }
 
 // getConfigID generates configID based no the checksum of the XML descriptors
-func (srv *Server) getConfigID() int32 {
+func (srv *Server) GetConfigID() int32 {
 	h := crc32.NewIEEE()
 	h.Write(srv.rootDescXML)
 	for _, s := range services {
