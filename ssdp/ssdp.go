@@ -195,8 +195,13 @@ func (me *Server) makeNotifyMessage(target, nts string, extraHdrs [][2]string) [
 	req.Write(buf)
 	return buf.Bytes()
 }
-
 func (me *Server) send(buf []byte, addr *net.UDPAddr) {
+	me.sendOnce(buf, addr)
+	time.Sleep(10 * time.Millisecond)
+	me.sendOnce(buf, addr)
+}
+
+func (me *Server) sendOnce(buf []byte, addr *net.UDPAddr) {
 	if n, err := me.conn.WriteToUDP(buf, addr); err != nil {
 		log.Printf("error writing to UDP socket: %s", err)
 	} else if n != len(buf) {
