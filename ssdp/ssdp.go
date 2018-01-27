@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -155,7 +156,6 @@ func (me *Server) Serve() (err error) {
 				panic(fmt.Sprint("unexpected addr type:", addr))
 			}()
 			extraHdrs := [][2]string{
-				{"CACHE-CONTROL", fmt.Sprintf("max-age=%d", 5*me.NotifyInterval/2/time.Second)},
 				{"LOCATION", me.Location(ip)},
 			}
 			me.notifyAll(aliveNTS, extraHdrs)
@@ -172,27 +172,27 @@ func (me *Server) usnFromTarget(target string) string {
 }
 
 func (me *Server) makeNotifyMessage(target, nts string, extraHdrs [][2]string) []byte {
-	lines := [...][2]string{
-		{"HOST", AddrString},
-		{"NT", target},
-		{"NTS", nts},
-		{"SERVER", me.Server},
-		{"USN", me.usnFromTarget(target)},
-		{"BOOTID.UPNP.ORG", me.BootID},
-		{"CONFIGID.UPNP.ORG", me.ConfigID},
-	}
-	buf := &bytes.Buffer{}
-	fmt.Fprint(buf, "NOTIFY * HTTP/1.1\r\n")
-	writeHdr := func(keyValue [2]string) {
-		fmt.Fprintf(buf, "%s: %s\r\n", keyValue[0], keyValue[1])
-	}
-	for _, pair := range lines {
-		writeHdr(pair)
-	}
+
+	h := me.defaultHeaders()
+	h.Set("HOST", AddrString)
+	h.Set("NT", target)
+	h.Set("NTS", nts)
+	h.Set("USN", me.usnFromTarget(target))
 	for _, pair := range extraHdrs {
-		writeHdr(pair)
+		h.Add(pair[0], pair[1])
 	}
-	fmt.Fprint(buf, "\r\n")
+
+	req := http.Request{
+		Method:     "NOTIFY",
+		URL:        &url.URL{Path: "*"},
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     h,
+	}
+
+	buf := &bytes.Buffer{}
+	req.Write(buf)
 	return buf.Bytes()
 }
 
@@ -309,28 +309,31 @@ func (me *Server) handle(buf []byte, sender *net.UDPAddr) {
 }
 
 func (me *Server) makeResponse(ip net.IP, targ string, req *http.Request) (ret []byte) {
+	h := me.defaultHeaders()
+	h.Set("LOCATION", me.Location(ip))
+	h.Set("ST", targ)
+	h.Set("USN", me.usnFromTarget(targ))
 	resp := &http.Response{
 		StatusCode: 200,
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-		Header:     make(http.Header),
+		Header:     h,
 		Request:    req,
-	}
-	for _, pair := range [...][2]string{
-		{"CACHE-CONTROL", fmt.Sprintf("max-age=%d", 5*me.NotifyInterval/2/time.Second)},
-		{"EXT", ""},
-		{"LOCATION", me.Location(ip)},
-		{"SERVER", me.Server},
-		{"ST", targ},
-		{"USN", me.usnFromTarget(targ)},
-		{"BOOTID.UPNP.ORG", me.BootID},
-		{"CONFIGID.UPNP.ORG", me.ConfigID},
-	} {
-		resp.Header.Set(pair[0], pair[1])
 	}
 	buf := &bytes.Buffer{}
 	if err := resp.Write(buf); err != nil {
 		panic(err)
 	}
 	return buf.Bytes()
+}
+
+func (me *Server) defaultHeaders() http.Header {
+	return http.Header(map[string][]string{
+		"CACHE-CONTROL":     {fmt.Sprintf("max-age=%d", 5*me.NotifyInterval/2/time.Second)},
+		"EXT":               {""},
+		"SERVER":            {me.Server},
+		"BOOTID.UPNP.ORG":   {me.BootID},
+		"CONFIGID.UPNP.ORG": {me.ConfigID},
+		"DATE":              {time.Now().Format(time.RFC1123)},
+	})
 }
