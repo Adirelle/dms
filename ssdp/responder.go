@@ -27,6 +27,11 @@ func NewResponder(c SSDPConfig, l logging.Logger) *Responder {
 	return &Responder{SSDPConfig: c, l: l.Named("responder")}
 }
 
+func (r *Responder) String() string {
+	if r.conn != nil {
+		return fmt.Sprintf("SSDP responder on %s", r.conn.LocalAddr().String())
+	}
+	return fmt.Sprintf("SSDP responder")
 }
 
 func (r *Responder) Serve() {

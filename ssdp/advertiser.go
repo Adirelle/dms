@@ -28,6 +28,8 @@ func NewAdvertiser(c SSDPConfig, l logging.Logger) *Advertiser {
 	return &Advertiser{SSDPConfig: c, l: l.Named("advertiser")}
 }
 
+func (a *Advertiser) String() string {
+	return "SSDP advertiser"
 }
 
 func (a *Advertiser) Serve() {
