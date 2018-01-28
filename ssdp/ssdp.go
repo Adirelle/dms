@@ -3,6 +3,8 @@ package ssdp
 import (
 	"net"
 	"time"
+
+	"github.com/thejerf/suture"
 )
 
 const (
@@ -36,4 +38,11 @@ func (c *SSDPConfig) allTypes() []string {
 		append([]string{rootDevice, c.UUID}, c.Devices...),
 		c.Services...,
 	)
+}
+
+func New(c SSDPConfig) suture.Service {
+	spv := suture.NewSimple("ssdp")
+	spv.Add(NewAdvertiser(c))
+	spv.Add(NewResponder(c))
+	return spv
 }

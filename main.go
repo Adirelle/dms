@@ -30,6 +30,7 @@ type dmsConfig struct {
 	Http             string
 	FFprobeCachePath string
 	NoProbe          bool
+	NotifyInterval   time.Duration
 }
 
 func (c *dmsConfig) load(configPath string) {
@@ -103,7 +104,9 @@ func main() {
 	}
 
 	var ffProber ffmpeg.FFProber
-	if !config.NoProbe {
+	if config.NoProbe {
+		ffProber = ffmpeg.NewFFProber(true, nil)
+	} else {
 		cache := &fFprobeCache{
 			c: rrcache.New(64 << 20),
 		}
@@ -116,20 +119,14 @@ func main() {
 			}
 		}()
 
-		ffProber = ffmpeg.NewFFProber(config.NoProbe, cache)
-	} else {
-		ffProber = ffmpeg.NewFFProber(false, nil)
+		ffProber = ffmpeg.NewFFProber(false, cache)
 	}
 
-	spv := suture.NewSimple("dms")
-
 	httpServer := makeHTTPServer(config, ffProber)
+
+	spv := suture.NewSimple("dms")
 	spv.Add(httpServer)
-
-	sspdConf := makeSSDPConfig(config, httpServer)
-	spv.Add(ssdp.NewAdvertiser(*sspdConf))
-	spv.Add(ssdp.NewResponder(*sspdConf))
-
+	spv.Add(ssdp.New(makeSSDPConfig(config, httpServer)))
 	spv.ServeBackground()
 	defer spv.Stop()
 
@@ -163,7 +160,7 @@ func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
 			}
 			ifs = tmp
 			return
-		}(dmsConfig.IfName),
+		}(config.IfName),
 		HTTPConn: func() net.Listener {
 			conn, err := net.Listen("tcp", config.Http)
 			if err != nil {
@@ -191,8 +188,8 @@ func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
 	}
 }
 
-func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) *ssdp.SSDPConfig {
-	return &ssdp.SSDPConfig{
+func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.SSDPConfig {
+	return ssdp.SSDPConfig{
 		NotifyInterval: config.NotifyInterval,
 		Interfaces:     config.ValidInterfaces,
 		Location:       httpServer.DDDLocation,
