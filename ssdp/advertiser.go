@@ -11,7 +11,11 @@ import (
 	"golang.org/x/net/ipv4"
 )
 
-const flagSSDP = net.FlagUp | net.FlagMulticast
+const (
+	flagSSDP  = net.FlagUp | net.FlagMulticast
+	aliveNTS  = "ssdp:alive"
+	byebyeNTS = "ssdp:byebye"
+)
 
 type Advertiser struct {
 	SSDPConfig
@@ -28,11 +32,11 @@ func (a *Advertiser) Serve() {
 	a.w.Add(1)
 	defer func() {
 		a.done = nil
-		a.NotifyAll("ssdp:byebye", true)
+		a.notifyAll(byebyeNTS, true)
 		a.w.Done()
 	}()
 	for {
-		go a.NotifyAll("ssdp:alive", false)
+		go a.notifyAll(aliveNTS, false)
 		select {
 		case <-time.After(a.NotifyInterval):
 		case <-a.done:

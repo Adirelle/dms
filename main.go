@@ -127,8 +127,11 @@ func main() {
 		}
 	}()
 
-	adv := startAdvertiser(config, httpServer)
+	sspdConf := makeSSDPConfig(config, httpServer)
+	adv := startAdvertiser(sspdConf)
 	defer adv.Stop()
+	resp := startResponder(sspdConf)
+	defer resp.Stop()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -190,8 +193,8 @@ func startHTTPServer(config *dmsConfig, ffprober *ffmpeg.FFProber) (httpServer *
 	return
 }
 
-func startAdvertiser(config *dmsConfig, httpServer *dms.Server) *ssdp.Advertiser {
-	adv := ssdp.NewAdvertiser(ssdp.SSDPConfig{
+func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) *ssdp.SSDPConfig {
+	return &ssdp.SSDPConfig{
 		NotifyInterval: config.NotifyInterval,
 		Interfaces:     config.ValidInterfaces,
 		Location:       httpServer.DDDLocation,
@@ -201,9 +204,19 @@ func startAdvertiser(config *dmsConfig, httpServer *dms.Server) *ssdp.Advertiser
 		UUID:           httpServer.DeviceUUID(),
 		BootID:         httpServer.GetBootID(),
 		ConfigID:       httpServer.GetConfigID(),
-	})
-	go adv.Serve()
-	return adv
+	}
+}
+
+func startAdvertiser(c *ssdp.SSDPConfig) *ssdp.Advertiser {
+	a := ssdp.NewAdvertiser(*c)
+	go a.Serve()
+	return a
+}
+
+func startResponder(c *ssdp.SSDPConfig) *ssdp.Responder {
+	r := ssdp.NewResponder(*c)
+	go r.Serve()
+	return r
 }
 
 func (cache *fFprobeCache) load(path string) error {
