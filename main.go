@@ -140,31 +140,10 @@ func main() {
 }
 
 func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
+	ifaces, _ := config.ValidInterfaces()
 	return &dms.Server{
-		Interfaces: func(ifName string) (ifs []net.Interface) {
-			var err error
-			if ifName == "" {
-				ifs, err = net.Interfaces()
-			} else {
-				var if_ *net.Interface
-				if_, err = net.InterfaceByName(ifName)
-				if if_ != nil {
-					ifs = append(ifs, *if_)
-				}
-			}
-			if err != nil {
-				log.Fatal(err)
-			}
-			var tmp []net.Interface
-			for _, if_ := range ifs {
-				if if_.Flags&net.FlagUp == 0 || if_.MTU <= 0 {
-					continue
-				}
-				tmp = append(tmp, if_)
-			}
-			ifs = tmp
-			return
-		}(config.IfName),
+		Config:     config,
+		Interfaces: ifaces,
 		HTTPConn: func() net.Listener {
 			conn, err := net.Listen("tcp", config.Http)
 			if err != nil {
