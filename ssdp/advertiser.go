@@ -2,12 +2,12 @@ package ssdp
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/anacrolix/dms/logging"
 	"golang.org/x/net/ipv4"
 )
 
@@ -21,10 +21,13 @@ type Advertiser struct {
 	SSDPConfig
 	done chan struct{}
 	w    sync.WaitGroup
+	l    logging.Logger
 }
 
-func NewAdvertiser(c SSDPConfig) *Advertiser {
-	return &Advertiser{SSDPConfig: c}
+func NewAdvertiser(c SSDPConfig, l logging.Logger) *Advertiser {
+	return &Advertiser{SSDPConfig: c, l: l.Named("advertiser")}
+}
+
 }
 
 func (a *Advertiser) Serve() {
@@ -34,7 +37,9 @@ func (a *Advertiser) Serve() {
 		a.done = nil
 		a.notifyAll(byebyeNTS, true)
 		a.w.Done()
+		a.l.Info("stopped advertiser")
 	}()
+	a.l.Info("started advertiser")
 	for {
 		go a.notifyAll(aliveNTS, false)
 		select {
@@ -53,7 +58,8 @@ func (a *Advertiser) Stop() {
 func (a *Advertiser) notifyAll(nts string, immediate bool) {
 	ifaces, err := a.Interfaces()
 	if err != nil {
-		log.Printf("Could not get interfaces: %s", err)
+		a.l.Errorf("could not get interfaces: %s", err.Error())
+		return
 	}
 	wg := sync.WaitGroup{}
 	for _, iface := range ifaces {
@@ -72,7 +78,7 @@ func (a *Advertiser) notifyAll(nts string, immediate bool) {
 func (a *Advertiser) notifyIFace(iface *net.Interface, nts string, immediate bool) {
 	ips, err := a.getMulticastSourceAddrs(iface)
 	if err != nil {
-		log.Printf("Cannot multicast no %s: %s", iface.Name, err)
+		a.l.Errorf("cannot multicast using %s: %s", iface.Name, err.Error())
 		return
 	}
 	for _, ip := range ips {
@@ -105,9 +111,10 @@ func (a *Advertiser) getMulticastSourceAddrs(iface *net.Interface) (ips []net.IP
 }
 
 func (a *Advertiser) notify(ip net.IP, nts string, immediate bool) {
+	l := a.l.With("source", ip.String())
 	conn, err := a.openConn(ip)
 	if err != nil {
-		log.Printf("cannot multicast from %s: %s", ip.String(), err.Error())
+		l.Errorf("cannot multicast %s", err.Error())
 		return
 	}
 	defer conn.Close()
@@ -123,11 +130,11 @@ func (a *Advertiser) notify(ip net.IP, nts string, immediate bool) {
 		buf := a.makeNotifyMessage(msgType, nts, ip)
 		n, err := conn.Write(buf)
 		if err != nil {
-			log.Printf("could not send notify from %s: %s", ip.String(), err.Error())
+			l.Errorf("could not send notify: %s", err.Error())
 		} else if n < len(buf) {
-			log.Printf("short write %d/%d", n, len(buf))
+			l.Errorf("short write %d/%d", n, len(buf))
 		} else {
-			log.Printf("%s %q notify sent to %s from %s", nts, msgType, conn.RemoteAddr().String(), conn.LocalAddr().String())
+			l.Debugf("%s %q notify sent to %s", nts, msgType, conn.RemoteAddr().String())
 		}
 	}
 }

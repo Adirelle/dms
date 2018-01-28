@@ -4,6 +4,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/anacrolix/dms/logging"
 	"github.com/thejerf/suture"
 )
 
@@ -40,9 +41,10 @@ func (c *SSDPConfig) allTypes() []string {
 	)
 }
 
-func New(c SSDPConfig) suture.Service {
+func New(c SSDPConfig, l logging.Logger) suture.Service {
+	l = l.Named("ssdp")
 	spv := suture.NewSimple("ssdp")
-	spv.Add(NewAdvertiser(c))
-	spv.Add(NewResponder(c))
+	spv.Add(NewResponder(c, l))
+	spv.Add(NewAdvertiser(c, l))
 	return spv
 }

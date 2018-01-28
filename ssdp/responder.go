@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/anacrolix/dms/logging"
 	"golang.org/x/net/ipv4"
 )
 
@@ -20,24 +20,30 @@ type Responder struct {
 	conn *ipv4.PacketConn
 	done chan struct{}
 	w    sync.WaitGroup
+	l    logging.Logger
 }
 
-func NewResponder(c SSDPConfig) *Responder {
-	return &Responder{SSDPConfig: c}
+func NewResponder(c SSDPConfig, l logging.Logger) *Responder {
+	return &Responder{SSDPConfig: c, l: l.Named("responder")}
+}
+
 }
 
 func (r *Responder) Serve() {
 	conn, err := r.makeConn()
 	if err != nil {
-		log.Panicf("could not open connection: %s", err)
+		r.l.Errorf("could not open connection: %s", err.Error())
+		return
 	}
 	r.conn = conn
+	defer conn.Close()
 	r.done = make(chan struct{})
 	r.w.Add(1)
 	defer func() {
 		r.done = nil
 		r.w.Done()
 	}()
+	l := r.l.With("socket", conn.LocalAddr().String())
 
 	for {
 		msg := make([]byte, 2048)
@@ -49,12 +55,13 @@ func (r *Responder) Serve() {
 		}
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
-				log.Printf("error while receiving: %s", err.Error())
-				continue
+				l.Infof("error while receiving: %s", err.Error())
+			} else {
+				l.Errorf("error while receiving: %s", err.Error())
 			}
-			log.Panicf("error while receiving: %s", err.Error())
+			continue
 		}
-		go r.handle(sender.(*net.UDPAddr), msg[:n])
+		go r.handle(sender.(*net.UDPAddr), msg[:n], l.With("client", sender.String()))
 	}
 }
 
@@ -78,39 +85,44 @@ func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
 		if iface.Name == "" {
 			continue
 		}
-		log.Printf("%#v", iface)
 		if iErr := conn.JoinGroup(&iface, NetAddr); iErr != nil {
-			log.Printf("could not join multicast group on %s: %s", iface.Name, iErr.Error())
+			r.l.Infof("listening on %s", iface.Name)
+		} else {
+			r.l.Errorf("could not join multicast group on %s: %s", iface.Name, iErr.Error())
 		}
 	}
 	return
 }
 
-func (r *Responder) handle(sender *net.UDPAddr, msg []byte) {
+func (r *Responder) handle(sender *net.UDPAddr, msg []byte, l logging.Logger) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(msg)))
 	if err != nil {
-		log.Printf("cannot read request from %s: %s", sender.String(), err.Error())
+		l.Errorf("cannot read requests: %s", err.Error())
 		return
 	}
 
 	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("Man") != `"ssdp:discover"` {
-		log.Printf("ignored request from %s, Method=%q URL=%q Man=%q", sender.String(), req.Method, req.URL.String(), req.Header.Get("Man"))
+		l.Debugf("ignored request, Method=%q URL=%q Man=%q", req.Method, req.URL.String(), req.Header.Get("Man"))
 		return
 	}
 
 	if tcpPort := req.Header.Get("TCPPORT.UPNP.ORG"); tcpPort != "" {
-		log.Printf("ignored M-SEARCH from %s, cannot reply to TCP port %s", sender.String(), tcpPort)
+		l.Warnf("ignored M-SEARCH, cannot reply to TCP port %s", tcpPort)
 		return
 	}
 
 	ip, err := r.findLocalIPFor(sender)
 	if err != nil {
-		log.Printf("could not find a local addr to reply to %s: %s", sender.String(), err.Error())
+		l.Errorf("could not find a local addr to reply to %s: %s", err.Error())
 		return
 	}
 
-	maxDelay := readMaxDelay(req.Header.Get("Mx"))
+	maxDelay := readMaxDelay(req.Header.Get("Mx"), l)
 	sts := r.resolveST(req.Header.Get("St"))
+	if len(sts) == 0 {
+		l.Debugf("no matching notification types", req.Header.Get("St"))
+		return
+	}
 	maxDelay = maxDelay / time.Duration(len(sts))
 
 	for _, st := range sts {
@@ -122,22 +134,22 @@ func (r *Responder) handle(sender *net.UDPAddr, msg []byte) {
 			return
 		}
 		if n, err := r.conn.WriteTo(msg, nil, sender); err != nil {
-			log.Printf("could not send to %s: %s", sender.String(), err.Error())
+			l.Errorf("could not send: %s", err.Error())
 		} else if n < len(msg) {
-			log.Printf("short write to %s: %d/%d", sender.String(), n, len(msg))
+			l.Errorf("short write: %d/%d", n, len(msg))
 		} else {
-			log.Printf("%q response sent to %s", st, sender.String())
+			l.Debugf("%q response sent", st)
 		}
 	}
 }
 
-func readMaxDelay(mx string) time.Duration {
+func readMaxDelay(mx string, l logging.Logger) time.Duration {
 	if mx == "" {
 		return time.Second
 	}
 	n, err := strconv.Atoi(mx)
 	if err != nil {
-		log.Printf("invalid mx: %q", mx)
+		l.Debugf("invalid mx (%q): %s", mx, err.Error())
 		return time.Second
 	}
 	if n < 0 {

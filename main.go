@@ -20,6 +20,7 @@ import (
 
 	"github.com/anacrolix/dms/dlna/dms"
 	"github.com/anacrolix/dms/ffmpeg"
+	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/rrcache"
 )
 
@@ -71,7 +72,8 @@ func (c *dmsConfig) ValidInterfaces() (ret []net.Interface, err error) {
 }
 
 func main() {
-	log.SetFlags(log.Ltime | log.Lshortfile)
+	logger := logging.NewDevelopment()
+	defer logger.Sync()
 
 	config := &dmsConfig{}
 	configFilePath := ""
@@ -96,11 +98,12 @@ func main() {
 	flag.Parse()
 	if flag.NArg() != 0 {
 		flag.Usage()
-		log.Fatalf("%s: %s\n", "unexpected positional arguments", flag.Args())
+		logger.Fatalf("%s: %s\n", "unexpected positional arguments", flag.Args())
 	}
 
-	if len(configFilePath) > 0 {
-		config.load(configFilePath)
+	if len(*configFilePath) > 0 {
+		logger.Infof("loading configuration from %s", *configFilePath)
+		config.load(*configFilePath)
 	}
 
 	var ffProber ffmpeg.FFProber
@@ -111,11 +114,11 @@ func main() {
 			c: rrcache.New(64 << 20),
 		}
 		if err := cache.load(config.FFprobeCachePath); err == nil {
-			log.Print(err)
+			logger.Warnf("could load cache: %s", err.Error())
 		}
 		defer func() {
 			if err := cache.save(config.FFprobeCachePath); err != nil {
-				log.Print(err)
+				logger.Warnf("could not save cache: %s", err.Error())
 			}
 		}()
 
@@ -124,11 +127,12 @@ func main() {
 
 	httpServer := makeHTTPServer(config, ffProber)
 
-	spv := suture.NewSimple("dms")
-	spv.Add(httpServer)
-	spv.Add(ssdp.New(makeSSDPConfig(config, httpServer)))
+	spv := suture.New("dms", suture.Spec{Log: func(msg string) { logger.Warn(msg) }})
 	spv.ServeBackground()
 	defer spv.Stop()
+
+	spv.Add(httpServer)
+	spv.Add(ssdp.New(makeSSDPConfig(config, httpServer), logger))
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
