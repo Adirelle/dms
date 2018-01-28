@@ -91,7 +91,7 @@ func (a *Advertiser) getMulticastSourceAddrs(iface *net.Interface) (ips []net.IP
 	if err != nil {
 		return
 	}
-	ips = make([]net.IP, 0)
+	ips = make([]net.IP, 0, len(ifAddrs))
 	for _, addr := range ifAddrs {
 		var ip net.IP
 		switch val := addr.(type) {

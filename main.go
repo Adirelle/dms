@@ -62,7 +62,7 @@ func (c *dmsConfig) ValidInterfaces() (ret []net.Interface, err error) {
 	if err != nil {
 		return
 	}
-	ret = make([]net.Interface, len(ifaces))
+	ret = make([]net.Interface, 0, len(ifaces))
 	for _, iface := range ifaces {
 		if iface.Flags&net.FlagUp != 0 && iface.MTU > 0 {
 			ret = append(ret, iface)

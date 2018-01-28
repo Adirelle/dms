@@ -82,9 +82,6 @@ func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
 	}
 	conn = ipv4.NewPacketConn(c)
 	for _, iface := range ifaces {
-		if iface.Name == "" {
-			continue
-		}
 		if iErr := conn.JoinGroup(&iface, NetAddr); iErr != nil {
 			r.l.Infof("listening on %s", iface.Name)
 		} else {
