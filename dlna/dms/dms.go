@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/anacrolix/dms/dlna"
@@ -120,7 +121,7 @@ func (me *Server) httpPort() int {
 	return me.HTTPConn.Addr().(*net.TCPAddr).Port
 }
 
-func (me *Server) serveHTTP() error {
+func (me *Server) serveHTTP() {
 	srv := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if me.LogHeaders {
@@ -138,10 +139,12 @@ func (me *Server) serveHTTP() error {
 	}
 	err := srv.Serve(me.HTTPConn)
 	select {
-	case <-me.closed:
-		return nil
+	case <-me.done:
+		return
 	default:
-		return err
+	}
+	if err != nil {
+		log.Print(err)
 	}
 }
 
@@ -171,6 +174,9 @@ type Config struct {
 	IgnoreHidden bool
 	// Ignore unreadable files and directories
 	IgnoreUnreadable bool
+
+	done chan struct{}
+	w    sync.WaitGroup
 }
 
 type Server struct {
@@ -688,24 +694,31 @@ func (s *Server) initServices() (err error) {
 	return
 }
 
-func (srv *Server) Serve() (err error) {
+func (srv *Server) Serve() {
+	var err error
 	if err = srv.initServices(); err != nil {
-		return
+		log.Panicf("could not initialize UPNP services: %s", err.Error())
 	}
-	srv.closed = make(chan struct{})
+	srv.done = make(chan struct{})
+	srv.w.Add(1)
+	defer func() {
+		srv.done = nil
+		srv.w.Done()
+	}()
+
 	if srv.FriendlyName == "" {
 		srv.FriendlyName = getDefaultFriendlyName()
 	}
 	if srv.HTTPConn == nil {
 		srv.HTTPConn, err = net.Listen("tcp", "")
 		if err != nil {
-			return
+			log.Panicf("could not fetch interfaces: %s", err.Error())
 		}
 	}
 	if srv.Interfaces == nil {
 		ifs, err := net.Interfaces()
 		if err != nil {
-			log.Print(err)
+			log.Panicf("could not fetch interfaces: %s", err.Error())
 		}
 		var tmp []net.Interface
 		for _, if_ := range ifs {
@@ -748,18 +761,22 @@ func (srv *Server) Serve() (err error) {
 		},
 		" ", "  ")
 	if err != nil {
-		return
+		log.Panicf("could not marshall device descriptor: %s", err.Error())
 	}
 	srv.rootDescXML = append([]byte(`<?xml version="1.0"?>`), srv.rootDescXML...)
 	log.Println("HTTP srv on", srv.HTTPConn.Addr())
 	srv.initMux(srv.httpServeMux)
-	return srv.serveHTTP()
+	srv.serveHTTP()
+
 }
 
-func (srv *Server) Close() (err error) {
-	close(srv.closed)
-	err = srv.HTTPConn.Close()
-	return
+func (srv *Server) Stop() {
+	close(srv.done)
+	err := srv.HTTPConn.Close()
+	if err != nil {
+		log.Print(err)
+	}
+	srv.w.Wait()
 }
 
 func didl_lite(chardata string) string {

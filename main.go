@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/ssdp"
+	"gopkg.in/thejerf/suture.v2"
 
 	"github.com/anacrolix/dms/dlna/dms"
 	"github.com/anacrolix/dms/ffmpeg"
@@ -120,27 +121,25 @@ func main() {
 		ffProber = ffmpeg.NewFFProber(false, nil)
 	}
 
-	httpServer := startHTTPServer(config, ffProber)
-	defer func() {
-		if err := httpServer.Close(); err != nil {
-			log.Fatal(err)
-		}
-	}()
+	spv := suture.NewSimple("dms")
+
+	httpServer := makeHTTPServer(config, ffProber)
+	spv.Add(httpServer)
 
 	sspdConf := makeSSDPConfig(config, httpServer)
-	adv := startAdvertiser(sspdConf)
-	defer adv.Stop()
-	resp := startResponder(sspdConf)
-	defer resp.Stop()
+	spv.Add(ssdp.NewAdvertiser(*sspdConf))
+	spv.Add(ssdp.NewResponder(*sspdConf))
+
+	spv.ServeBackground()
+	defer spv.Stop()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
 	<-sigs
 }
 
-func startHTTPServer(config *dmsConfig, ffprober *ffmpeg.FFProber) (httpServer *dms.Server) {
-	httpServer = &dms.Server{
-		Config: dmsConfig,
+func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
+	return &dms.Server{
 		Interfaces: func(ifName string) (ifs []net.Interface) {
 			var err error
 			if ifName == "" {
@@ -190,7 +189,6 @@ func startHTTPServer(config *dmsConfig, ffprober *ffmpeg.FFProber) (httpServer *
 		},
 		FFProber: ffProber,
 	}
-	return
 }
 
 func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) *ssdp.SSDPConfig {
