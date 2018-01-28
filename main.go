@@ -124,7 +124,7 @@ func main() {
 		ffProber = ffmpeg.NewFFProber(false, cache)
 	}
 
-	httpServer := makeHTTPServer(config, ffProber)
+	httpServer := makeHTTPServer(config, ffProber, logger)
 
 	spv := suture.New("dms", suture.Spec{Log: func(msg string) { logger.Warn(msg) }})
 	spv.ServeBackground()
@@ -138,7 +138,7 @@ func main() {
 	<-sigs
 }
 
-func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
+func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber, l logging.Logger) *dms.Server {
 	ifaces, _ := config.ValidInterfaces()
 	return &dms.Server{
 		Config:     config.Config,
@@ -167,6 +167,7 @@ func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
 			},
 		},
 		FFProber: ffProber,
+		L:        l.Named("http"),
 	}
 }
 

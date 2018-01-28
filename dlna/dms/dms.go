@@ -26,6 +26,7 @@ import (
 
 	"github.com/anacrolix/dms/dlna"
 	"github.com/anacrolix/dms/ffmpeg"
+	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/soap"
 	"github.com/anacrolix/dms/transcode"
 	"github.com/anacrolix/dms/upnp"
@@ -66,7 +67,7 @@ var transcodes = map[string]transcodeSpec{
 func (me *Server) DeviceUUID() string {
 	h := md5.New()
 	if _, err := io.WriteString(h, me.FriendlyName); err != nil {
-		log.Panicf("DeviceUUUID write failed: %s", err)
+		me.L.Panicf("DeviceUUUID write failed: %s", err)
 	}
 	buf := h.Sum(nil)
 	return upnp.FormatUUID(buf)
@@ -122,21 +123,15 @@ func (me *Server) httpPort() int {
 }
 
 func (me *Server) serveHTTP() {
-	srv := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if me.LogHeaders {
-				fmt.Fprintf(os.Stderr, "%s %s\r\n", r.Method, r.RequestURI)
-				r.Header.Write(os.Stderr)
-				fmt.Fprintln(os.Stderr)
-			}
-			w.Header().Set("Ext", "")
-			w.Header().Set("Server", ServerToken)
-			me.httpServeMux.ServeHTTP(&mitmRespWriter{
-				ResponseWriter: w,
-				logHeader:      me.LogHeaders,
-			}, r)
-		}),
-	}
+
+	baseHandler := me.logHeaderHandler(me.httpServeMux.ServeHTTP)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Ext", "")
+		w.Header().Set("Server", ServerToken)
+		baseHandler(w, r)
+	})
+
+	srv := &http.Server{Handler: handler}
 	err := srv.Serve(me.HTTPConn)
 	select {
 	case <-me.done:
@@ -144,8 +139,23 @@ func (me *Server) serveHTTP() {
 	default:
 	}
 	if err != nil {
-		log.Print(err)
+		me.L.Error(err)
 	}
+}
+
+func (me *Server) logHeaderHandler(next http.HandlerFunc) http.HandlerFunc {
+	if !me.LogHeaders {
+		return next
+	}
+	hl := me.L.Named("headers")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hl.Infof("%s %s", r.Method, r.RequestURI)
+		r.Header.Write(os.Stderr)
+		next(&mitmRespWriter{
+			ResponseWriter: w,
+			logHeader:      me.LogHeaders,
+		}, r)
+	})
 }
 
 var (
@@ -182,6 +192,7 @@ type Server struct {
 	HTTPConn   net.Listener
 	Interfaces []net.Interface
 	FFProber   ffmpeg.FFProber
+	L          logging.Logger
 
 	httpServeMux   *http.ServeMux
 	rootDescXML    []byte
@@ -318,10 +329,10 @@ func (me *Server) serveDLNATranscode(w http.ResponseWriter, r *http.Request, pat
 	os.MkdirAll(filepath.Dir(stderrPath), 0750)
 	logFile, err := os.Create(stderrPath)
 	if err != nil {
-		log.Printf("couldn't create transcode log file: %s", err)
+		me.L.Warnf("couldn't create transcode log file: %s", err)
 	} else {
 		defer logFile.Close()
-		log.Printf("logging transcode to %q", stderrPath)
+		me.L.Infof("logging transcode to %q", stderrPath)
 	}
 	p, err := ts.Transcode(path_, range_.Start, range_.End-range_.Start, logFile)
 	if err != nil {
@@ -477,7 +488,7 @@ func (me *Server) serviceControlHandler(w http.ResponseWriter, r *http.Request) 
 	bodyStr := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>%s</s:Body></s:Envelope>`, soapRespXML)
 	w.WriteHeader(code)
 	if _, err := w.Write([]byte(bodyStr)); err != nil {
-		log.Print(err)
+		me.L.Error(err)
 	}
 }
 
@@ -539,7 +550,7 @@ func (server *Server) contentDirectoryInitialEvent(urls []*url.URL, sid string) 
 		bodyReader := bytes.NewReader(body)
 		req, err := http.NewRequest("NOTIFY", _url.String(), bodyReader)
 		if err != nil {
-			log.Printf("Could not create a request to notify %s: %s", _url.String(), err)
+			server.L.Errorf("could not create a request to notify %s: %s", _url.String(), err)
 			continue
 		}
 		req.Header["CONTENT-TYPE"] = []string{`text/xml; charset="utf-8"`}
@@ -554,7 +565,7 @@ func (server *Server) contentDirectoryInitialEvent(urls []*url.URL, sid string) 
 		resp, err := http.DefaultClient.Do(req)
 		eventingLogger.Print("finished notify")
 		if err != nil {
-			log.Printf("Could not notify %s: %s", _url.String(), err)
+			server.L.Errorf("could not notify %s: %s", _url.String(), err)
 			continue
 		}
 		eventingLogger.Print(resp)
@@ -626,7 +637,7 @@ func (server *Server) initMux(mux *http.ServeMux) {
 			server.RootObjectPath,
 		})
 		if err != nil {
-			log.Println(err)
+			server.L.Error(err)
 		}
 	})
 	mux.HandleFunc(contentDirectoryEventSubURL, server.contentDirectoryEventSubHandler)
@@ -695,7 +706,7 @@ func (s *Server) initServices() (err error) {
 func (srv *Server) Serve() {
 	var err error
 	if err = srv.initServices(); err != nil {
-		log.Panicf("could not initialize UPNP services: %s", err.Error())
+		srv.L.Panicf("could not initialize UPNP services: %s", err.Error())
 	}
 	srv.done = make(chan struct{})
 	srv.w.Add(1)
@@ -710,13 +721,13 @@ func (srv *Server) Serve() {
 	if srv.HTTPConn == nil {
 		srv.HTTPConn, err = net.Listen("tcp", "")
 		if err != nil {
-			log.Panicf("could not fetch interfaces: %s", err.Error())
+			srv.L.Panicf("could not bind: %s", err.Error())
 		}
 	}
 	if srv.Interfaces == nil {
 		ifs, err := net.Interfaces()
 		if err != nil {
-			log.Panicf("could not fetch interfaces: %s", err.Error())
+			srv.L.Panicf("could not fetch interfaces: %s", err.Error())
 		}
 		var tmp []net.Interface
 		for _, if_ := range ifs {
@@ -759,10 +770,10 @@ func (srv *Server) Serve() {
 		},
 		" ", "  ")
 	if err != nil {
-		log.Panicf("could not marshall device descriptor: %s", err.Error())
+		srv.L.Panicf("could not marshall device descriptor: %s", err.Error())
 	}
 	srv.rootDescXML = append([]byte(`<?xml version="1.0"?>`), srv.rootDescXML...)
-	log.Println("HTTP srv on", srv.HTTPConn.Addr())
+	srv.L.Infof("HTTP srv on", srv.HTTPConn.Addr())
 	srv.initMux(srv.httpServeMux)
 	srv.serveHTTP()
 
@@ -772,7 +783,7 @@ func (srv *Server) Stop() {
 	close(srv.done)
 	err := srv.HTTPConn.Close()
 	if err != nil {
-		log.Print(err)
+		srv.L.Error(err)
 	}
 	srv.w.Wait()
 }
@@ -808,7 +819,7 @@ func (server *Server) IgnorePath(path string) (bool, error) {
 		if hidden, err := isHiddenPath(path); err != nil {
 			return false, err
 		} else if hidden {
-			log.Print(path, " ignored: hidden")
+			server.L.Debug(path, " ignored: hidden")
 			return true, nil
 		}
 	}
@@ -816,7 +827,7 @@ func (server *Server) IgnorePath(path string) (bool, error) {
 		if readable, err := isReadablePath(path); err != nil {
 			return false, err
 		} else if !readable {
-			log.Print(path, " ignored: unreadable")
+			server.L.Debug(path, " ignored: unreadable")
 			return true, nil
 		}
 	}
