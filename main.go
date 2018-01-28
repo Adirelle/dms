@@ -206,18 +206,6 @@ func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.SSDPConfig {
 	}
 }
 
-func startAdvertiser(c *ssdp.SSDPConfig) *ssdp.Advertiser {
-	a := ssdp.NewAdvertiser(*c)
-	go a.Serve()
-	return a
-}
-
-func startResponder(c *ssdp.SSDPConfig) *ssdp.Responder {
-	r := ssdp.NewResponder(*c)
-	go r.Serve()
-	return r
-}
-
 func (cache *fFprobeCache) load(path string) error {
 	f, err := os.Open(path)
 	if err != nil {
