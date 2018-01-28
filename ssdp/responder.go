@@ -81,7 +81,11 @@ func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
 	if err != nil {
 		return
 	}
-	c, err := net.ListenPacket("udp4", "0.0.0.0:1900")
+	ip := net.IPv4(0, 0, 0, 0)
+	if len(ifaces) == 1 {
+		ip, _ = getUnicastAddr(&ifaces[0])
+	}
+	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: ip, Port: 1900})
 	if err != nil {
 		return
 	}
@@ -94,6 +98,30 @@ func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
 		}
 	}
 	return
+}
+
+func getUnicastAddr(iface *net.Interface) (ip net.IP, err error) {
+	addrs, err := iface.Addrs()
+	if err != nil {
+		return
+	}
+	for _, addr := range addrs {
+		var i net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			i = v.IP
+		case *net.IPAddr:
+			i = v.IP
+		default:
+			continue
+		}
+		if i.IsMulticast() || i.To4() == nil {
+			continue
+		}
+		ip = i
+		return
+	}
+	return nil, nil
 }
 
 func (r *Responder) handle(sender *net.UDPAddr, msg []byte, l logging.Logger) {
