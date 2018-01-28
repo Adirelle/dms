@@ -15,13 +15,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anacrolix/dms/ssdp"
-	"gopkg.in/thejerf/suture.v2"
-
 	"github.com/anacrolix/dms/dlna/dms"
 	"github.com/anacrolix/dms/ffmpeg"
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/rrcache"
+	"github.com/anacrolix/dms/ssdp"
+	"gopkg.in/thejerf/suture.v2"
 )
 
 type dmsConfig struct {
@@ -101,9 +100,9 @@ func main() {
 		logger.Fatalf("%s: %s\n", "unexpected positional arguments", flag.Args())
 	}
 
-	if len(*configFilePath) > 0 {
-		logger.Infof("loading configuration from %s", *configFilePath)
-		config.load(*configFilePath)
+	if len(configFilePath) > 0 {
+		logger.Infof("loading configuration from %s", configFilePath)
+		config.load(configFilePath)
 	}
 
 	var ffProber ffmpeg.FFProber
@@ -142,7 +141,7 @@ func main() {
 func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber) *dms.Server {
 	ifaces, _ := config.ValidInterfaces()
 	return &dms.Server{
-		Config:     config,
+		Config:     config.Config,
 		Interfaces: ifaces,
 		HTTPConn: func() net.Listener {
 			conn, err := net.Listen("tcp", config.Http)
@@ -183,25 +182,6 @@ func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.SSDPConfig {
 		BootID:         httpServer.GetBootID(),
 		ConfigID:       httpServer.GetConfigID(),
 	}
-}
-
-func (cache *fFprobeCache) load(path string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	dec := json.NewDecoder(f)
-	var items []dms.FfprobeCacheItem
-	err = dec.Decode(&items)
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		cache.Set(item.Key, item.Value)
-	}
-	log.Printf("added %d items from cache", len(items))
-	return nil
 }
 
 func getDefaultFFprobeCachePath() (path string) {

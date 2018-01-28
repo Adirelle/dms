@@ -174,9 +174,6 @@ type Config struct {
 	IgnoreHidden bool
 	// Ignore unreadable files and directories
 	IgnoreUnreadable bool
-
-	done chan struct{}
-	w    sync.WaitGroup
 }
 
 type Server struct {
@@ -193,8 +190,9 @@ type Server struct {
 	configID       string
 	closed         chan struct{}
 	ssdpStopped    chan struct{}
-	// The service SOAP handler keyed by service URN.
-	services map[string]UPnPService
+	services       map[string]UPnPService
+	done           chan struct{}
+	w              sync.WaitGroup
 }
 
 // UPnP SOAP service.
