@@ -153,56 +153,80 @@ func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 		"url", req.URL.String(),
 		"headers", req.Header,
 	)
-	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("Man") != `"ssdp:discover"` {
+	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("MAN") != `"ssdp:discover"` {
 		log.Debugw("ignored request")
 		return
 	}
 
-	if tcpPort := req.Header.Get("TCPPORT.UPNP.ORG"); tcpPort != "" {
-		log.Warnf("ignored M-SEARCH, cannot reply to TCP port %s", tcpPort)
-		return
-	}
-
-	ip, err := l.findLocalIPFor(sender)
+	conn, err := l.openReplyConn(sender, req.Header.Get("TCPPORT.UPNP.ORG"), log)
 	if err != nil {
-		log.Errorf("could not find a local addr to reply: %s", err.Error())
+		log.Errorf("could not open reply connection: %s", err.Error())
 		return
 	}
-	log = log.With("localAddr", ip.String())
+	log = log.With("local", conn.LocalAddr().String(), "remote", conn.RemoteAddr().String(), "net", conn.LocalAddr().Network())
 
-	maxDelay := readMaxDelay(req.Header.Get("Mx"), l)
-	sts := l.resolveST(req.Header.Get("St"))
+	maxDelay := readMaxDelay(req.Header, log)
+	sts := l.resolveST(req.Header.Get("ST"))
 	if len(sts) == 0 {
-		log.Debugf("no matching notification types", req.Header.Get("St"))
+		log.Debugf("no notification types matching %q", req.Header.Get("ST"))
 		return
 	}
 	maxDelay = maxDelay / time.Duration(len(sts))
 
 	for _, st := range sts {
-		msg := l.makeResponse(ip, st)
-		delay := time.Duration(rand.Int63n(int64(maxDelay)))
-		select {
-		case <-time.After(delay):
-		case <-l.done:
-			return
-		}
-		if n, err := l.conn.WriteTo(msg, nil, sender); err != nil {
-			log.Errorf("could not send: %s", err.Error())
-		} else if n < len(msg) {
-			log.Errorf("short write: %d/%d", n, len(msg))
-		} else {
-			log.Debugf("response sent")
-		}
+		l.sendResponse(conn, st, maxDelay, log.With("st", st))
 	}
 }
 
-func readMaxDelay(mx string, l logging.Logger) time.Duration {
-	if mx == "" {
+func (l *listener) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log logging.Logger) (conn net.Conn, err error) {
+	ip, err := l.findLocalIPFor(sender)
+	if err != nil {
+		return
+	}
+
+	if tcpPortHeader == "" {
+		return net.DialUDP("udp", &net.UDPAddr{IP: ip}, sender)
+	}
+
+	port, err := strconv.Atoi(tcpPortHeader)
+	if err != nil {
+		return
+	}
+	return net.DialTCP("udp", &net.TCPAddr{IP: ip}, &net.TCPAddr{IP: sender.IP, Port: port})
+}
+
+func (l *listener) sendResponse(conn net.Conn, st string, maxDelay time.Duration, log logging.Logger) {
+	var ip net.IP
+	switch addr := conn.LocalAddr().(type) {
+	case *net.UDPAddr:
+		ip = addr.IP
+	case *net.TCPAddr:
+		ip = addr.IP
+	}
+	msg := l.makeResponse(ip, st)
+	delay := time.Duration(rand.Int63n(int64(maxDelay)))
+	select {
+	case <-time.After(delay):
+	case <-l.done:
+		return
+	}
+	if n, err := conn.Write(msg); err != nil {
+		log.Errorf("could not send: %s", err.Error())
+	} else if n < len(msg) {
+		log.Errorf("short write: %d/%d", n, len(msg))
+	} else {
+		log.Debugf("response sent")
+	}
+}
+
+func readMaxDelay(headers http.Header, log logging.Logger) time.Duration {
+	mx := headers.Get("MX")
+	if headers.Get("TCPPORT.UPNP.ORG") != "" || mx == "" {
 		return time.Second
 	}
 	n, err := strconv.Atoi(mx)
 	if err != nil {
-		l.Debugf("invalid mx (%q): %s", mx, err.Error())
+		log.Debugf("invalid mx (%q): %s", mx, err.Error())
 		return time.Second
 	}
 	if n < 0 {
