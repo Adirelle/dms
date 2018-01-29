@@ -44,7 +44,8 @@ func (c *SSDPConfig) allTypes() []string {
 func New(c SSDPConfig, l logging.Logger) suture.Service {
 	l = l.Named("ssdp")
 	spv := suture.NewSimple("ssdp")
-	spv.Add(NewResponder(c, l))
-	spv.Add(NewAdvertiser(c, l))
+	r := NewResponder(c, l)
+	spv.Add(r)
+	spv.Add(NewAdvertiser(c, r.Port, l))
 	return spv
 }

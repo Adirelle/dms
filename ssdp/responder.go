@@ -12,15 +12,16 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/logging"
+	"github.com/thejerf/suture"
 	"golang.org/x/net/ipv4"
 )
 
 type Responder struct {
 	SSDPConfig
-	conn *ipv4.PacketConn
-	done chan struct{}
-	w    sync.WaitGroup
-	l    logging.Logger
+	uni   *ipv4.PacketConn
+	multi *ipv4.PacketConn
+	l     logging.Logger
+	*suture.Supervisor
 }
 
 func NewResponder(c SSDPConfig, l logging.Logger) *Responder {
@@ -28,33 +29,97 @@ func NewResponder(c SSDPConfig, l logging.Logger) *Responder {
 }
 
 func (r *Responder) String() string {
-	if r.conn != nil {
-		return fmt.Sprintf("SSDP responder on %s", r.conn.LocalAddr().String())
-	}
-	return fmt.Sprintf("SSDP responder")
+	return "ssdp.responder"
+}
+
+func (r *Responder) Port() int {
+	return r.uni.LocalAddr().(*net.UDPAddr).Port
 }
 
 func (r *Responder) Serve() {
-	conn, err := r.makeConn()
+	var err error
+	r.multi, err = r.makeMulticastConn()
 	if err != nil {
-		r.l.Errorf("could not open connection: %s", err.Error())
+		r.l.Errorf("could not bind multicast listener: %s", err.Error())
 		return
 	}
-	r.conn = conn
-	defer conn.Close()
-	r.done = make(chan struct{})
-	r.w.Add(1)
-	defer func() {
-		r.done = nil
-		r.w.Done()
-	}()
-	l := r.l.With("socket", conn.LocalAddr().String())
 
+	for port := 1900; port < 0xFFFF; port++ {
+		r.uni, err = r.makeUnicastConn(port)
+		if err == nil {
+			r.l.Errorf("listening for unicast requests on port %d", port)
+			break
+		} else {
+			r.l.Errorf("could not bind unicast listener on port %d: %s", port, err.Error())
+		}
+	}
+
+	r.Supervisor = suture.NewSimple("ssdp.responder")
+	r.Add(newListener(r.SSDPConfig, r.uni, r.l.Named("unicast")))
+	r.Add(newListener(r.SSDPConfig, r.multi, r.l.Named("multicast")))
+	r.Supervisor.Serve()
+}
+
+func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
+	ifaces, err := r.Interfaces()
+	if err != nil {
+		return
+	}
+	c, err := net.ListenUDP("udp4", NetAddr)
+	if err != nil {
+		return
+	}
+	conn = ipv4.NewPacketConn(c)
+	for _, iface := range ifaces {
+		if iErr := conn.JoinGroup(&iface, NetAddr); iErr == nil {
+			r.l.Infof("listening on %q", iface.Name)
+		} else {
+			r.l.Errorf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
+		}
+	}
+	return
+}
+
+func (r *Responder) makeUnicastConn(port int) (conn *ipv4.PacketConn, err error) {
+	c, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+	if err == nil {
+		conn = ipv4.NewPacketConn(c)
+	}
+	return
+}
+
+type listener struct {
+	SSDPConfig
+	conn *ipv4.PacketConn
+	done chan struct{}
+	sync.WaitGroup
+	logging.Logger
+}
+
+func newListener(c SSDPConfig, conn *ipv4.PacketConn, l logging.Logger) *listener {
+	return &listener{
+		SSDPConfig: c,
+		Logger:     l.With("socket", conn.LocalAddr().String()),
+		conn:       conn,
+	}
+}
+
+func (l *listener) String() string {
+	return fmt.Sprintf("ssdp.listener.%s", l.conn.LocalAddr().String())
+}
+
+func (l *listener) Serve() {
+	l.done = make(chan struct{})
+	l.Add(1)
+	defer func() {
+		l.conn.Close()
+		l.Done()
+	}()
 	for {
 		msg := make([]byte, 2048)
-		n, _, sender, err := r.conn.ReadFrom(msg)
+		n, _, sender, err := l.conn.ReadFrom(msg)
 		select {
-		case <-r.done:
+		case <-l.done:
 			return
 		default:
 		}
@@ -66,109 +131,67 @@ func (r *Responder) Serve() {
 			}
 			continue
 		}
-		go r.handle(sender.(*net.UDPAddr), msg[:n], l.With("client", sender.String()))
+		go l.handle(sender.(*net.UDPAddr), msg[:n], l.With("client", sender.String()))
 	}
 }
 
-func (r *Responder) Stop() {
-	close(r.done)
-	r.conn.Close()
-	r.w.Wait()
+func (l *listener) Stop() {
+	close(l.done)
+	l.conn.Close()
+	l.Wait()
 }
 
-func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
-	ifaces, err := r.Interfaces()
-	if err != nil {
-		return
-	}
-	ip := net.IPv4(0, 0, 0, 0)
-	if len(ifaces) == 1 {
-		ip, _ = getUnicastAddr(&ifaces[0])
-	}
-	c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: ip, Port: 1900})
-	if err != nil {
-		return
-	}
-	conn = ipv4.NewPacketConn(c)
-	for _, iface := range ifaces {
-		if iErr := conn.JoinGroup(&iface, NetAddr); iErr != nil {
-			r.l.Infof("listening on %s", iface.Name)
-		} else {
-			r.l.Errorf("could not join multicast group on %s: %s", iface.Name, iErr.Error())
-		}
-	}
-	return
-}
-
-func getUnicastAddr(iface *net.Interface) (ip net.IP, err error) {
-	addrs, err := iface.Addrs()
-	if err != nil {
-		return
-	}
-	for _, addr := range addrs {
-		var i net.IP
-		switch v := addr.(type) {
-		case *net.IPNet:
-			i = v.IP
-		case *net.IPAddr:
-			i = v.IP
-		default:
-			continue
-		}
-		if i.IsMulticast() || i.To4() == nil {
-			continue
-		}
-		ip = i
-		return
-	}
-	return nil, nil
-}
-
-func (r *Responder) handle(sender *net.UDPAddr, msg []byte, l logging.Logger) {
+func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(msg)))
 	if err != nil {
-		l.Errorf("cannot read requests: %s", err.Error())
+		log.Errorf("cannot read requests: %s", err.Error())
 		return
 	}
 
+	log = log.With(
+		"method", req.Method,
+		"url", req.URL.String(),
+		"headers", req.Header,
+	)
 	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("Man") != `"ssdp:discover"` {
-		l.Debugf("ignored request, Method=%q URL=%q Man=%q", req.Method, req.URL.String(), req.Header.Get("Man"))
+		log.Debugw("ignored request")
 		return
 	}
 
 	if tcpPort := req.Header.Get("TCPPORT.UPNP.ORG"); tcpPort != "" {
-		l.Warnf("ignored M-SEARCH, cannot reply to TCP port %s", tcpPort)
+		log.Warnf("ignored M-SEARCH, cannot reply to TCP port %s", tcpPort)
 		return
 	}
 
-	ip, err := r.findLocalIPFor(sender)
+	ip, err := l.findLocalIPFor(sender)
 	if err != nil {
-		l.Errorf("could not find a local addr to reply to %s: %s", err.Error())
+		log.Errorf("could not find a local addr to reply: %s", err.Error())
 		return
 	}
+	log = log.With("localAddr", ip.String())
 
 	maxDelay := readMaxDelay(req.Header.Get("Mx"), l)
-	sts := r.resolveST(req.Header.Get("St"))
+	sts := l.resolveST(req.Header.Get("St"))
 	if len(sts) == 0 {
-		l.Debugf("no matching notification types", req.Header.Get("St"))
+		log.Debugf("no matching notification types", req.Header.Get("St"))
 		return
 	}
 	maxDelay = maxDelay / time.Duration(len(sts))
 
 	for _, st := range sts {
-		msg := r.makeResponse(ip, st)
+		msg := l.makeResponse(ip, st)
 		delay := time.Duration(rand.Int63n(int64(maxDelay)))
 		select {
 		case <-time.After(delay):
-		case <-r.done:
+		case <-l.done:
 			return
 		}
-		if n, err := r.conn.WriteTo(msg, nil, sender); err != nil {
-			l.Errorf("could not send: %s", err.Error())
+		if n, err := l.conn.WriteTo(msg, nil, sender); err != nil {
+			log.Errorf("could not send: %s", err.Error())
 		} else if n < len(msg) {
-			l.Errorf("short write: %d/%d", n, len(msg))
+			log.Errorf("short write: %d/%d", n, len(msg))
 		} else {
-			l.Debugf("%q response sent", st)
+			log.Debugf("response sent")
 		}
 	}
 }
@@ -190,8 +213,8 @@ func readMaxDelay(mx string, l logging.Logger) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func (r *Responder) resolveST(st string) []string {
-	types := r.allTypes()
+func (l *listener) resolveST(st string) []string {
+	types := l.allTypes()
 	if st == "ssdp:all" {
 		return types
 	}
@@ -215,23 +238,23 @@ const responseTpl = "HTTP/1.1 200 OK\r\n" +
 	"CONFIGID.UPNP.ORG: %d\r\n" +
 	"\r\n"
 
-func (r *Responder) makeResponse(ip net.IP, st string) []byte {
+func (l *listener) makeResponse(ip net.IP, st string) []byte {
 	s := fmt.Sprintf(
 		responseTpl,
-		5*r.NotifyInterval/2/time.Second,
+		5*l.NotifyInterval/2/time.Second,
 		time.Now().Format(time.RFC1123),
-		r.Location(ip),
-		r.Server,
+		l.Location(ip),
+		l.Server,
 		st,
-		r.usnFromTarget(st),
-		r.BootID,
-		r.ConfigID,
+		l.usnFromTarget(st),
+		l.BootID,
+		l.ConfigID,
 	)
 	return []byte(s)
 }
 
-func (r *Responder) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error) {
-	ifaces, err := r.Interfaces()
+func (l *listener) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error) {
+	ifaces, err := l.Interfaces()
 	if err != nil {
 		return
 	}

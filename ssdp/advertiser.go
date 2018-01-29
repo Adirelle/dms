@@ -19,17 +19,18 @@ const (
 
 type Advertiser struct {
 	SSDPConfig
-	done chan struct{}
-	w    sync.WaitGroup
-	l    logging.Logger
+	responderPort func() int
+	done          chan struct{}
+	w             sync.WaitGroup
+	l             logging.Logger
 }
 
-func NewAdvertiser(c SSDPConfig, l logging.Logger) *Advertiser {
-	return &Advertiser{SSDPConfig: c, l: l.Named("advertiser")}
+func NewAdvertiser(c SSDPConfig, rp func() int, l logging.Logger) *Advertiser {
+	return &Advertiser{SSDPConfig: c, responderPort: rp, l: l.Named("advertiser")}
 }
 
 func (a *Advertiser) String() string {
-	return "SSDP advertiser"
+	return "ssdp.advertiser"
 }
 
 func (a *Advertiser) Serve() {
@@ -58,9 +59,10 @@ func (a *Advertiser) Stop() {
 }
 
 func (a *Advertiser) notifyAll(nts string, immediate bool) {
+	log := a.l.With("nts", nts)
 	ifaces, err := a.Interfaces()
 	if err != nil {
-		a.l.Errorf("could not get interfaces: %s", err.Error())
+		log.Errorf("could not get interfaces: %s", err.Error())
 		return
 	}
 	wg := sync.WaitGroup{}
@@ -70,21 +72,21 @@ func (a *Advertiser) notifyAll(nts string, immediate bool) {
 		}
 		go func(iface *net.Interface) {
 			defer wg.Done()
-			a.notifyIFace(iface, nts, immediate)
+			a.notifyIFace(iface, nts, immediate, log.With("iface", iface.Name))
 		}(&iface)
 		wg.Add(1)
 	}
 	wg.Wait()
 }
 
-func (a *Advertiser) notifyIFace(iface *net.Interface, nts string, immediate bool) {
+func (a *Advertiser) notifyIFace(iface *net.Interface, nts string, immediate bool, log logging.Logger) {
 	ips, err := a.getMulticastSourceAddrs(iface)
 	if err != nil {
-		a.l.Errorf("cannot multicast using %s: %s", iface.Name, err.Error())
+		log.Errorf("cannot multicast using %s: %s", iface.Name, err.Error())
 		return
 	}
 	for _, ip := range ips {
-		a.notify(ip, nts, immediate)
+		a.notify(ip, nts, immediate, log.With("localAddr", ip.String()))
 	}
 }
 
@@ -112,15 +114,14 @@ func (a *Advertiser) getMulticastSourceAddrs(iface *net.Interface) (ips []net.IP
 	return
 }
 
-func (a *Advertiser) notify(ip net.IP, nts string, immediate bool) {
-	l := a.l.With("source", ip.String())
+func (a *Advertiser) notify(ip net.IP, nts string, immediate bool, log logging.Logger) {
 	conn, err := a.openConn(ip)
 	if err != nil {
-		l.Errorf("cannot multicast %s", err.Error())
+		log.Errorf("cannot multicast: %s", err.Error())
 		return
 	}
 	defer conn.Close()
-	for _, msgType := range a.allTypes() {
+	for _, nt := range a.allTypes() {
 		if !immediate {
 			delay := time.Duration(rand.Int63n(int64(100 * time.Millisecond)))
 			select {
@@ -129,15 +130,19 @@ func (a *Advertiser) notify(ip net.IP, nts string, immediate bool) {
 				return
 			}
 		}
-		buf := a.makeNotifyMessage(msgType, nts, ip)
-		n, err := conn.Write(buf)
-		if err != nil {
-			l.Errorf("could not send notify: %s", err.Error())
-		} else if n < len(buf) {
-			l.Errorf("short write %d/%d", n, len(buf))
-		} else {
-			l.Debugf("%s %q notify sent to %s", nts, msgType, conn.RemoteAddr().String())
-		}
+		a.notifyType(conn, nt, nts, log.With("nt", nt))
+	}
+}
+
+func (a *Advertiser) notifyType(conn net.Conn, nt, nts string, log logging.Logger) {
+	buf := a.makeNotifyMessage(nt, nts, conn)
+	n, err := conn.Write(buf)
+	if err != nil {
+		log.Errorf("could not send notify: %s", err.Error())
+	} else if n < len(buf) {
+		log.Errorf("short write %d/%d", n, len(buf))
+	} else {
+		log.Debug("notification sent")
 	}
 }
 
@@ -165,21 +170,23 @@ const notifyTpl = "NOTIFY * HTTP/1.1\r\n" +
 	"SERVER: %s\r\n" +
 	"BOOTID.UPNP.ORG: %d\r\n" +
 	"CONFIGID.UPNP.ORG: %d\r\n" +
+	"SEARCHPORT.UPNP.ORG: %d\r\n" +
 	"\r\n"
 
-func (a *Advertiser) makeNotifyMessage(target, nts string, ip net.IP) []byte {
+func (a *Advertiser) makeNotifyMessage(nt, nts string, conn net.Conn) []byte {
 	msg := fmt.Sprintf(
 		notifyTpl,
 		AddrString,
-		target,
+		nt,
 		nts,
-		a.usnFromTarget(target),
-		a.Location(ip),
+		a.usnFromTarget(nt),
+		a.Location(conn.LocalAddr().(*net.UDPAddr).IP),
 		time.Now().Format(time.RFC1123),
 		5*a.NotifyInterval/2/time.Second,
 		a.Server,
 		a.BootID,
 		a.ConfigID,
+		a.responderPort(),
 	)
 	return []byte(msg)
 }
