@@ -99,7 +99,7 @@ type listener struct {
 func newListener(c SSDPConfig, conn *ipv4.PacketConn, l logging.Logger) *listener {
 	return &listener{
 		SSDPConfig: c,
-		Logger:     l.With("socket", conn.LocalAddr().String()),
+		Logger:     l.With("local", conn.LocalAddr().String()),
 		conn:       conn,
 	}
 }
@@ -131,7 +131,7 @@ func (l *listener) Serve() {
 			}
 			continue
 		}
-		go l.handle(sender.(*net.UDPAddr), msg[:n], l.With("client", sender.String()))
+		go l.handle(sender.(*net.UDPAddr), msg[:n], l.With("remote", sender.String()))
 	}
 }
 

@@ -86,7 +86,7 @@ func (a *Advertiser) notifyIFace(iface *net.Interface, nts string, immediate boo
 		return
 	}
 	for _, ip := range ips {
-		a.notify(ip, nts, immediate, log.With("localAddr", ip.String()))
+		a.notify(ip, nts, immediate, log.With("local", ip.String()))
 	}
 }
 
