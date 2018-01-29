@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/anacrolix/dms/logging"
 	"github.com/thejerf/suture"
 	"golang.org/x/net/ipv4"
@@ -149,6 +151,7 @@ func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 	}
 
 	log = log.With(
+		zap.Namespace("request"),
 		"method", req.Method,
 		"url", req.URL.String(),
 		"headers", req.Header,
@@ -163,7 +166,12 @@ func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 		log.Errorf("could not open reply connection: %s", err.Error())
 		return
 	}
-	log = log.With("local", conn.LocalAddr().String(), "remote", conn.RemoteAddr().String(), "net", conn.LocalAddr().Network())
+	log = log.With(
+		zap.Namespace("response"),
+		"local", conn.LocalAddr().String(),
+		"remote", conn.RemoteAddr().String(),
+		"net", conn.LocalAddr().Network(),
+	)
 
 	maxDelay := readMaxDelay(req.Header, log)
 	sts := l.resolveST(req.Header.Get("ST"))

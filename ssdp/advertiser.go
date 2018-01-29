@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"github.com/anacrolix/dms/logging"
 	"golang.org/x/net/ipv4"
 )
@@ -59,7 +61,7 @@ func (a *Advertiser) Stop() {
 }
 
 func (a *Advertiser) notifyAll(nts string, immediate bool) {
-	log := a.l.With("nts", nts)
+	log := a.l.With(zap.Namespace("notification"), "nts", nts)
 	ifaces, err := a.Interfaces()
 	if err != nil {
 		log.Errorf("could not get interfaces: %s", err.Error())
