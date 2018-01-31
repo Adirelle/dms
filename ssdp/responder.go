@@ -49,10 +49,10 @@ func (r *Responder) Serve() {
 	for port := 1900; port < 0xFFFF; port++ {
 		r.uni, err = r.makeUnicastConn(port)
 		if err == nil {
-			r.l.Errorf("listening for unicast requests on port %d", port)
+			r.l.Infof("listening for unicast requests on port %d", port)
 			break
 		} else {
-			r.l.Errorf("could not bind unicast listener on port %d: %s", port, err.Error())
+			r.l.Warnf("could not bind unicast listener on port %d: %s", port, err.Error())
 		}
 	}
 
@@ -76,7 +76,7 @@ func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
 		if iErr := conn.JoinGroup(&iface, NetAddr); iErr == nil {
 			r.l.Infof("listening on %q", iface.Name)
 		} else {
-			r.l.Errorf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
+			r.l.Warnf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
 		}
 	}
 	return
@@ -129,7 +129,7 @@ func (l *listener) Serve() {
 			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
 				l.Infof("error while receiving: %s", err.Error())
 			} else {
-				l.Errorf("error while receiving: %s", err.Error())
+				l.Warnf("error while receiving: %s", err.Error())
 			}
 			continue
 		}
@@ -146,7 +146,7 @@ func (l *listener) Stop() {
 func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(msg)))
 	if err != nil {
-		log.Errorf("cannot read requests: %s", err.Error())
+		log.Warnf("cannot read requests: %s", err.Error())
 		return
 	}
 
@@ -163,7 +163,7 @@ func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
 
 	conn, err := l.openReplyConn(sender, req.Header.Get("TCPPORT.UPNP.ORG"), log)
 	if err != nil {
-		log.Errorf("could not open reply connection: %s", err.Error())
+		log.Warnf("could not open reply connection: %s", err.Error())
 		return
 	}
 	log = log.With(
@@ -219,9 +219,9 @@ func (l *listener) sendResponse(conn net.Conn, st string, maxDelay time.Duration
 		return
 	}
 	if n, err := conn.Write(msg); err != nil {
-		log.Errorf("could not send: %s", err.Error())
+		log.Warnf("could not send: %s", err.Error())
 	} else if n < len(msg) {
-		log.Errorf("short write: %d/%d", n, len(msg))
+		log.Warnf("short write: %d/%d", n, len(msg))
 	} else {
 		log.Debugf("response sent")
 	}

@@ -84,7 +84,7 @@ func (a *Advertiser) notifyAll(nts string, immediate bool) {
 func (a *Advertiser) notifyIFace(iface *net.Interface, nts string, immediate bool, log logging.Logger) {
 	ips, err := a.getMulticastSourceAddrs(iface)
 	if err != nil {
-		log.Errorf("cannot multicast using %s: %s", iface.Name, err.Error())
+		log.Warnf("cannot multicast using %s: %s", iface.Name, err.Error())
 		return
 	}
 	for _, ip := range ips {
@@ -119,7 +119,7 @@ func (a *Advertiser) getMulticastSourceAddrs(iface *net.Interface) (ips []net.IP
 func (a *Advertiser) notify(ip net.IP, nts string, immediate bool, log logging.Logger) {
 	conn, err := a.openConn(ip)
 	if err != nil {
-		log.Errorf("cannot multicast: %s", err.Error())
+		log.Warnf("cannot multicast: %s", err.Error())
 		return
 	}
 	defer conn.Close()
@@ -140,9 +140,9 @@ func (a *Advertiser) notifyType(conn net.Conn, nt, nts string, log logging.Logge
 	buf := a.makeNotifyMessage(nt, nts, conn)
 	n, err := conn.Write(buf)
 	if err != nil {
-		log.Errorf("could not send notify: %s", err.Error())
+		log.Warnf("could not send notify: %s", err.Error())
 	} else if n < len(buf) {
-		log.Errorf("short write %d/%d", n, len(buf))
+		log.Warnf("short write %d/%d", n, len(buf))
 	} else {
 		log.Debug("notification sent")
 	}
