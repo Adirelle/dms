@@ -42,7 +42,7 @@ func (r *Responder) Serve() {
 	var err error
 	r.multi, err = r.makeMulticastConn()
 	if err != nil {
-		r.l.Errorf("could not bind multicast listener: %s", err.Error())
+		r.l.Error(err)
 		return
 	}
 
@@ -52,7 +52,7 @@ func (r *Responder) Serve() {
 			r.l.Infof("listening for unicast requests on port %d", port)
 			break
 		} else {
-			r.l.Warnf("could not bind unicast listener on port %d: %s", port, err.Error())
+			r.l.Warn(err)
 		}
 	}
 

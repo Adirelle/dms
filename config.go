@@ -14,8 +14,8 @@ type dmsConfig struct {
 	dms.Config
 	Logging          logging.Config
 	Path             string
-	IfName           string
-	Http             string
+	Interface        *net.Interface
+	HTTP             *net.TCPAddr
 	FFprobeCachePath string
 	NoProbe          bool
 	NotifyInterval   time.Duration
@@ -32,11 +32,10 @@ func (c *dmsConfig) load(configPath string) (err error) {
 }
 
 func (c *dmsConfig) Interfaces() ([]net.Interface, error) {
-	if c.IfName == "" {
+	if c.Interface == nil {
 		return net.Interfaces()
 	}
-	iface, err := net.InterfaceByName(c.IfName)
-	return []net.Interface{*iface}, err
+	return []net.Interface{*c.Interface}, nil
 }
 
 func (c *dmsConfig) ValidInterfaces() (ret []net.Interface, err error) {

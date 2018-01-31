@@ -22,7 +22,10 @@ import (
 )
 
 func main() {
-	config := &dmsConfig{Logging: logging.DefaultConfig()}
+	config := &dmsConfig{
+		HTTP:    &net.TCPAddr{Port: 1338},
+		Logging: logging.DefaultConfig(),
+	}
 
 	setupFlags(config)
 
@@ -79,9 +82,9 @@ func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber, l logging.Logge
 		Config:     config.Config,
 		Interfaces: ifaces,
 		HTTPConn: func() net.Listener {
-			conn, err := net.Listen("tcp", config.Http)
+			conn, err := net.ListenTCP("tcp", config.HTTP)
 			if err != nil {
-				log.Fatal(err)
+				l.Fatal(err)
 			}
 			return conn
 		}(),

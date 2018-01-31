@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 )
@@ -12,8 +13,8 @@ func setupFlags(config *dmsConfig) {
 	flag.Var(configFileVar{config}, "config", "json configuration file")
 
 	flag.StringVar(&config.Path, "path", ".", "browse root path")
-	flag.StringVar(&config.Http, "http", ":1338", "http server port")
-	flag.StringVar(&config.IfName, "ifname", "", "specific SSDP network interface")
+	flag.Var(tcpAddrVar{config.HTTP}, "http", "http server port")
+	flag.Var(ifaceVar{&config.Interface}, "ifname", "network interface to bind to")
 	flag.StringVar(&config.FriendlyName, "friendlyName", "", "server friendly name")
 	flag.StringVar(&config.FFprobeCachePath, "fFprobeCachePath", getDefaultFFprobeCachePath(), "path to FFprobe cache file")
 
@@ -63,4 +64,45 @@ func (c configFileVar) Set(path string) error {
 		return fmt.Errorf("Error loading configuration file (%s): %s", path, err.Error())
 	}
 	return nil
+}
+
+type tcpAddrVar struct{ addr *net.TCPAddr }
+
+func (t tcpAddrVar) String() string {
+	return t.addr.String()
+}
+
+func (t tcpAddrVar) Get() interface{} {
+	return t.addr
+}
+
+func (t tcpAddrVar) Set(address string) (err error) {
+	addr, err := net.ResolveTCPAddr("tcp", address)
+	if err == nil {
+		t.addr.IP = addr.IP
+		t.addr.Port = addr.Port
+		t.addr.Zone = addr.Zone
+	}
+	return
+}
+
+type ifaceVar struct{ iface **net.Interface }
+
+func (i ifaceVar) String() string {
+	if *i.iface != nil {
+		return (*i.iface).Name
+	}
+	return ""
+}
+
+func (i ifaceVar) Get() interface{} {
+	return i.iface
+}
+
+func (i ifaceVar) Set(ifname string) (err error) {
+	iface, err := net.InterfaceByName(ifname)
+	if err == nil {
+		*i.iface = iface
+	}
+	return
 }
