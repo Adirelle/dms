@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/logging"
-	"github.com/thejerf/suture"
+	"gopkg.in/thejerf/suture.v2"
 )
 
 const (

@@ -14,8 +14,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/anacrolix/dms/logging"
-	"github.com/thejerf/suture"
 	"golang.org/x/net/ipv4"
+	"gopkg.in/thejerf/suture.v2"
 )
 
 type Responder struct {
