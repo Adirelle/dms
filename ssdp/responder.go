@@ -118,22 +118,19 @@ func (l *listener) Serve() {
 		l.Done()
 	}()
 	for {
-		msg := make([]byte, 2048)
-		n, _, sender, err := l.conn.ReadFrom(msg)
+		sender, req, err := l.receiveRequest()
 		select {
 		case <-l.done:
 			return
 		default:
 		}
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
-				l.Infof("error while receiving: %s", err.Error())
-			} else {
-				l.Warnf("error while receiving: %s", err.Error())
-			}
-			continue
+		if err == nil {
+			go l.handle(sender, req, l)
+		} else if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+			l.Infof("error while receiving: %s", err.Error())
+		} else {
+			l.Warnf("error while receiving: %s", err.Error())
 		}
-		go l.handle(sender.(*net.UDPAddr), msg[:n], l.With("remote", sender.String()))
 	}
 }
 
@@ -143,15 +140,21 @@ func (l *listener) Stop() {
 	l.Wait()
 }
 
-func (l *listener) handle(sender *net.UDPAddr, msg []byte, log logging.Logger) {
-	req, err := http.ReadRequest(bufio.NewReader(bytes.NewReader(msg)))
+func (l *listener) receiveRequest() (sender *net.UDPAddr, req *http.Request, err error) {
+	var buf [2048]byte
+	n, _, sdr, err := l.conn.ReadFrom(buf[:])
 	if err != nil {
-		log.Warnf("cannot read requests: %s", err.Error())
 		return
 	}
+	sender, _ = sdr.(*net.UDPAddr)
+	req, err = http.ReadRequest(bufio.NewReader(bytes.NewReader(buf[:n])))
+	return
+}
 
+func (l *listener) handle(sender *net.UDPAddr, req *http.Request, log logging.Logger) {
 	log = log.With(
 		zap.Namespace("request"),
+		"remote", sender.String(),
 		"method", req.Method,
 		"url", req.URL.String(),
 		"headers", req.Header,
@@ -204,24 +207,15 @@ func (l *listener) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log 
 }
 
 func (l *listener) sendResponse(conn net.Conn, st string, maxDelay time.Duration, log logging.Logger) {
-	var ip net.IP
-	switch addr := conn.LocalAddr().(type) {
-	case *net.UDPAddr:
-		ip = addr.IP
-	case *net.TCPAddr:
-		ip = addr.IP
-	}
-	msg := l.makeResponse(ip, st)
 	delay := time.Duration(rand.Int63n(int64(maxDelay)))
 	select {
 	case <-time.After(delay):
 	case <-l.done:
 		return
 	}
-	if n, err := conn.Write(msg); err != nil {
+	_, err := l.writeResponse(conn, mustGetIP(conn.LocalAddr()), st)
+	if err != nil {
 		log.Warnf("could not send: %s", err.Error())
-	} else if n < len(msg) {
-		log.Warnf("short write: %d/%d", n, len(msg))
 	} else {
 		log.Debugf("response sent")
 	}
@@ -270,8 +264,9 @@ const responseTpl = "HTTP/1.1 200 OK\r\n" +
 	"CONFIGID.UPNP.ORG: %d\r\n" +
 	"\r\n"
 
-func (l *listener) makeResponse(ip net.IP, st string) []byte {
-	s := fmt.Sprintf(
+func (l *listener) writeResponse(conn net.Conn, ip net.IP, st string) (int, error) {
+	return fmt.Fprintf(
+		conn,
 		responseTpl,
 		5*l.NotifyInterval/2/time.Second,
 		time.Now().Format(time.RFC1123),
@@ -282,7 +277,6 @@ func (l *listener) makeResponse(ip net.IP, st string) []byte {
 		l.BootID,
 		l.ConfigID,
 	)
-	return []byte(s)
 }
 
 func (l *listener) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error) {

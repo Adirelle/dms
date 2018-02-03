@@ -137,12 +137,9 @@ func (a *Advertiser) notify(ip net.IP, nts string, immediate bool, log logging.L
 }
 
 func (a *Advertiser) notifyType(conn net.Conn, nt, nts string, log logging.Logger) {
-	buf := a.makeNotifyMessage(nt, nts, conn)
-	n, err := conn.Write(buf)
+	_, err := a.writeNotification(conn, nt, nts)
 	if err != nil {
-		log.Warnf("could not send notify: %s", err.Error())
-	} else if n < len(buf) {
-		log.Warnf("short write %d/%d", n, len(buf))
+		log.Warnf("could not send notification: %s", err.Error())
 	} else {
 		log.Debug("notification sent")
 	}
@@ -175,8 +172,9 @@ const notifyTpl = "NOTIFY * HTTP/1.1\r\n" +
 	"SEARCHPORT.UPNP.ORG: %d\r\n" +
 	"\r\n"
 
-func (a *Advertiser) makeNotifyMessage(nt, nts string, conn net.Conn) []byte {
-	msg := fmt.Sprintf(
+func (a *Advertiser) writeNotification(conn net.Conn, nt, nts string) (int, error) {
+	return fmt.Fprintf(
+		conn,
 		notifyTpl,
 		AddrString,
 		nt,
@@ -190,5 +188,4 @@ func (a *Advertiser) makeNotifyMessage(nt, nts string, conn net.Conn) []byte {
 		a.ConfigID,
 		a.responderPort(),
 	)
-	return []byte(msg)
 }

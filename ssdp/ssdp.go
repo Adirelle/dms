@@ -1,6 +1,7 @@
 package ssdp
 
 import (
+	"fmt"
 	"net"
 	"time"
 
@@ -48,4 +49,25 @@ func New(c Config, l logging.Logger) suture.Service {
 	spv.Add(r)
 	spv.Add(NewAdvertiser(c, r.Port, l))
 	return spv
+}
+
+func getIP(v interface{}) (net.IP, bool) {
+	switch addr := v.(type) {
+	case *net.IPAddr:
+		return addr.IP, true
+	case *net.IPNet:
+		return addr.IP, true
+	case *net.UDPAddr:
+		return addr.IP, true
+	case *net.TCPAddr:
+		return addr.IP, true
+	}
+	return net.IP{}, false
+}
+
+func mustGetIP(v interface{}) net.IP {
+	if ip, ok := getIP(v); ok {
+		return ip
+	}
+	panic(fmt.Errorf("cannot work IP out of %#v", v))
 }
