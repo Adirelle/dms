@@ -69,7 +69,7 @@ func makeFFProber(config *dmsConfig, logger logging.Logger) (ffmpeg.FFProber, *f
 	cache := &fFprobeCache{
 		c: rrcache.New(64 << 20),
 	}
-	if err := cache.load(config.FFprobeCachePath); err == nil {
+	if err := cache.load(config.FFprobeCachePath); err != nil {
 		logger.Warnf("could load cache: %s", err.Error())
 	}
 
