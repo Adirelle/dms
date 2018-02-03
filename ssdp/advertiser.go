@@ -20,15 +20,15 @@ const (
 )
 
 type Advertiser struct {
-	SSDPConfig
+	Config
 	responderPort func() int
 	done          chan struct{}
 	w             sync.WaitGroup
 	l             logging.Logger
 }
 
-func NewAdvertiser(c SSDPConfig, rp func() int, l logging.Logger) *Advertiser {
-	return &Advertiser{SSDPConfig: c, responderPort: rp, l: l.Named("advertiser")}
+func NewAdvertiser(c Config, rp func() int, l logging.Logger) *Advertiser {
+	return &Advertiser{Config: c, responderPort: rp, l: l.Named("advertiser")}
 }
 
 func (a *Advertiser) String() string {

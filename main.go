@@ -109,8 +109,8 @@ func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber, l logging.Logge
 	}
 }
 
-func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.SSDPConfig {
-	return ssdp.SSDPConfig{
+func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.Config {
+	return ssdp.Config{
 		NotifyInterval: config.NotifyInterval,
 		Interfaces:     config.ValidInterfaces,
 		Location:       httpServer.DDDLocation,

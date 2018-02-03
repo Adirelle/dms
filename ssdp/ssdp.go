@@ -15,7 +15,7 @@ const (
 
 var NetAddr = &net.UDPAddr{IP: net.IPv4(239, 255, 255, 250), Port: 1900}
 
-type SSDPConfig struct {
+type Config struct {
 	Interfaces     func() ([]net.Interface, error)
 	Server         string
 	Services       []string
@@ -27,21 +27,21 @@ type SSDPConfig struct {
 	ConfigID       int32
 }
 
-func (c *SSDPConfig) usnFromTarget(target string) string {
+func (c *Config) usnFromTarget(target string) string {
 	if target == c.UUID {
 		return target
 	}
 	return c.UUID + "::" + target
 }
 
-func (c *SSDPConfig) allTypes() []string {
+func (c *Config) allTypes() []string {
 	return append(
 		append([]string{rootDevice, c.UUID}, c.Devices...),
 		c.Services...,
 	)
 }
 
-func New(c SSDPConfig, l logging.Logger) suture.Service {
+func New(c Config, l logging.Logger) suture.Service {
 	l = l.Named("ssdp")
 	spv := suture.NewSimple("ssdp")
 	r := NewResponder(c, l)

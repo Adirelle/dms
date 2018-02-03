@@ -19,15 +19,15 @@ import (
 )
 
 type Responder struct {
-	SSDPConfig
+	Config
 	uni   *ipv4.PacketConn
 	multi *ipv4.PacketConn
 	l     logging.Logger
 	*suture.Supervisor
 }
 
-func NewResponder(c SSDPConfig, l logging.Logger) *Responder {
-	return &Responder{SSDPConfig: c, l: l.Named("responder")}
+func NewResponder(c Config, l logging.Logger) *Responder {
+	return &Responder{Config: c, l: l.Named("responder")}
 }
 
 func (r *Responder) String() string {
@@ -57,8 +57,8 @@ func (r *Responder) Serve() {
 	}
 
 	r.Supervisor = suture.NewSimple("ssdp.responder")
-	r.Add(newListener(r.SSDPConfig, r.uni, r.l.Named("unicast")))
-	r.Add(newListener(r.SSDPConfig, r.multi, r.l.Named("multicast")))
+	r.Add(newListener(r.Config, r.uni, r.l.Named("unicast")))
+	r.Add(newListener(r.Config, r.multi, r.l.Named("multicast")))
 	r.Supervisor.Serve()
 }
 
@@ -91,18 +91,18 @@ func (r *Responder) makeUnicastConn(port int) (conn *ipv4.PacketConn, err error)
 }
 
 type listener struct {
-	SSDPConfig
+	Config
 	conn *ipv4.PacketConn
 	done chan struct{}
 	sync.WaitGroup
 	logging.Logger
 }
 
-func newListener(c SSDPConfig, conn *ipv4.PacketConn, l logging.Logger) *listener {
+func newListener(c Config, conn *ipv4.PacketConn, l logging.Logger) *listener {
 	return &listener{
-		SSDPConfig: c,
-		Logger:     l.With("local", conn.LocalAddr().String()),
-		conn:       conn,
+		Config: c,
+		Logger: l.With("local", conn.LocalAddr().String()),
+		conn:   conn,
 	}
 }
 
