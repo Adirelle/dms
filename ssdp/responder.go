@@ -40,20 +40,20 @@ func (r *Responder) Port() int {
 
 func (r *Responder) Serve() {
 	var err error
-	r.multi, err = r.makeMulticastConn()
-	if err != nil {
-		r.l.Error(err)
-		return
-	}
-
 	for port := 1900; port < 0xFFFF; port++ {
 		r.uni, err = r.makeUnicastConn(port)
 		if err == nil {
-			r.l.Infof("listening for unicast requests on port %d", port)
+			r.l.Infof("listening for unicast requests on %s", r.uni.LocalAddr().String())
 			break
 		} else {
 			r.l.Warn(err)
 		}
+	}
+
+	r.multi, err = r.makeMulticastConn()
+	if err != nil {
+		r.l.Error(err)
+		return
 	}
 
 	r.Supervisor = suture.NewSimple("ssdp.responder")
@@ -74,7 +74,7 @@ func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
 	conn = ipv4.NewPacketConn(c)
 	for _, iface := range ifaces {
 		if iErr := conn.JoinGroup(&iface, NetAddr); iErr == nil {
-			r.l.Infof("listening on %q", iface.Name)
+			r.l.Infof("listening for multicast requests on %q (%s)", iface.Name, conn.LocalAddr().String())
 		} else {
 			r.l.Warnf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
 		}
@@ -83,7 +83,25 @@ func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
 }
 
 func (r *Responder) makeUnicastConn(port int) (conn *ipv4.PacketConn, err error) {
-	c, err := net.ListenUDP("udp4", &net.UDPAddr{Port: port})
+	ifaces, err := r.Interfaces()
+	if err != nil {
+		return
+	}
+	var addr = &net.UDPAddr{Port: port}
+	if len(ifaces) == 1 {
+		addrs, err := ifaces[0].Addrs()
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range addrs {
+			if ip, ok := getIP(a); ok && ip.To4() != nil {
+				addr.IP = ip
+				break
+			}
+		}
+	}
+
+	c, err := net.ListenUDP("udp4", addr)
 	if err == nil {
 		conn = ipv4.NewPacketConn(c)
 	}
