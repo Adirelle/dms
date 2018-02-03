@@ -773,7 +773,7 @@ func (srv *Server) Serve() {
 		srv.L.Panicf("could not marshall device descriptor: %s", err.Error())
 	}
 	srv.rootDescXML = append([]byte(`<?xml version="1.0"?>`), srv.rootDescXML...)
-	srv.L.Infof("HTTP srv on", srv.HTTPConn.Addr())
+	srv.L.Infof("serving %s by HTTP on %s", srv.RootObjectPath, srv.HTTPConn.Addr().String())
 	srv.initMux(srv.httpServeMux)
 	srv.serveHTTP()
 
