@@ -30,6 +30,7 @@ func setupFlags(config *dmsConfig) {
 	flag.BoolVar(&config.Logging.Debug, "debug", false, "Enable development logging")
 	flag.Var(stringsVar(config.Logging.OutputPaths), "logPath", "Log files")
 	flag.Var(&config.Logging.Level, "logLevel", "Minimum log level")
+	flag.BoolVar(&config.Logging.NoDate, "logNoDate", false, "Disable timestamp in log")
 
 }
 

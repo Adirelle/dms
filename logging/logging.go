@@ -46,11 +46,11 @@ type Config struct {
 	Debug       bool
 	Level       zapcore.Level
 	OutputPaths []string
+	NoDate      bool
 }
 
 func DefaultConfig() Config {
 	return Config{
-		Debug:       false,
 		Level:       zap.InfoLevel,
 		OutputPaths: []string{"stderr"},
 	}
@@ -68,7 +68,11 @@ func New(c Config) Logger {
 		zConf.DisableStacktrace = true
 	}
 	zConf.Level = zap.NewAtomicLevelAt(c.Level)
-	zConf.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	if c.NoDate {
+		zConf.EncoderConfig.TimeKey = ""
+	} else {
+		zConf.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	}
 	zConf.EncoderConfig.EncodeLevel = zapcore.CapitalLevelEncoder
 	zConf.OutputPaths = c.OutputPaths
 	zConf.Encoding = "console"
