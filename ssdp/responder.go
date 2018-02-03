@@ -15,54 +15,69 @@ import (
 
 	"github.com/anacrolix/dms/logging"
 	"golang.org/x/net/ipv4"
-	"gopkg.in/thejerf/suture.v2"
 )
 
 type Responder struct {
 	Config
-	uni   *ipv4.PacketConn
-	multi *ipv4.PacketConn
-	l     logging.Logger
-	*suture.Supervisor
+	conn *ipv4.PacketConn
+	logging.Logger
+	done chan struct{}
+	sync.WaitGroup
 }
 
 func NewResponder(c Config, l logging.Logger) *Responder {
-	return &Responder{Config: c, l: l.Named("responder")}
+	return &Responder{Config: c, Logger: l.Named("Responder")}
 }
 
 func (r *Responder) String() string {
-	return "ssdp.responder"
+	return "ssdp.Responder"
 }
 
 func (r *Responder) Port() int {
-	return r.uni.LocalAddr().(*net.UDPAddr).Port
+	return r.conn.LocalAddr().(*net.UDPAddr).Port
 }
 
 func (r *Responder) Serve() {
-	var err error
-	for port := 1900; port < 0xFFFF; port++ {
-		r.uni, err = r.makeUnicastConn(port)
-		if err == nil {
-			r.l.Infof("listening for unicast requests on %s", r.uni.LocalAddr().String())
-			break
-		} else {
-			r.l.Warn(err)
-		}
-	}
+	r.done = make(chan struct{})
+	r.Add(1)
+	defer func() {
+		r.conn.Close()
+		r.Done()
+	}()
 
-	r.multi, err = r.makeMulticastConn()
+	var err error
+
+	r.conn, err = r.makeConn()
 	if err != nil {
-		r.l.Error(err)
+		r.Errorf(err.Error())
 		return
 	}
 
-	r.Supervisor = suture.NewSimple("ssdp.responder")
-	r.Add(newListener(r.Config, r.uni, r.l.Named("unicast")))
-	r.Add(newListener(r.Config, r.multi, r.l.Named("multicast")))
-	r.Supervisor.Serve()
+	r.Infof("listening for SSDP request on %s", r.conn.LocalAddr().String())
+	for {
+		sender, req, err := r.receiveRequest()
+		select {
+		case <-r.done:
+			return
+		default:
+		}
+		if err == nil {
+			go r.handle(sender, req)
+		} else if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
+			r.Infof("error while receiving: %s", err.Error())
+		} else {
+			r.Warnf("error while receiving: %s", err.Error())
+		}
+	}
 }
 
-func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
+func (r *Responder) Stop() {
+	close(r.done)
+	r.conn.Close()
+	r.Wait()
+}
+
+func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
 	ifaces, err := r.Interfaces()
 	if err != nil {
 		return
@@ -73,94 +88,16 @@ func (r *Responder) makeMulticastConn() (conn *ipv4.PacketConn, err error) {
 	}
 	conn = ipv4.NewPacketConn(c)
 	for _, iface := range ifaces {
-		if iErr := conn.JoinGroup(&iface, NetAddr); iErr == nil {
-			r.l.Infof("listening for multicast requests on %q (%s)", iface.Name, conn.LocalAddr().String())
-		} else {
-			r.l.Warnf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
+		if iErr := conn.JoinGroup(&iface, NetAddr); iErr != nil {
+			r.Warnf("could not join multicast group on %q: %s", iface.Name, iErr.Error())
 		}
 	}
 	return
 }
 
-func (r *Responder) makeUnicastConn(port int) (conn *ipv4.PacketConn, err error) {
-	ifaces, err := r.Interfaces()
-	if err != nil {
-		return
-	}
-	var addr = &net.UDPAddr{Port: port}
-	if len(ifaces) == 1 {
-		addrs, err := ifaces[0].Addrs()
-		if err != nil {
-			return nil, err
-		}
-		for _, a := range addrs {
-			if ip, ok := getIP(a); ok && ip.To4() != nil {
-				addr.IP = ip
-				break
-			}
-		}
-	}
-
-	c, err := net.ListenUDP("udp4", addr)
-	if err == nil {
-		conn = ipv4.NewPacketConn(c)
-	}
-	return
-}
-
-type listener struct {
-	Config
-	conn *ipv4.PacketConn
-	done chan struct{}
-	sync.WaitGroup
-	logging.Logger
-}
-
-func newListener(c Config, conn *ipv4.PacketConn, l logging.Logger) *listener {
-	return &listener{
-		Config: c,
-		Logger: l.With("local", conn.LocalAddr().String()),
-		conn:   conn,
-	}
-}
-
-func (l *listener) String() string {
-	return fmt.Sprintf("ssdp.listener.%s", l.conn.LocalAddr().String())
-}
-
-func (l *listener) Serve() {
-	l.done = make(chan struct{})
-	l.Add(1)
-	defer func() {
-		l.conn.Close()
-		l.Done()
-	}()
-	for {
-		sender, req, err := l.receiveRequest()
-		select {
-		case <-l.done:
-			return
-		default:
-		}
-		if err == nil {
-			go l.handle(sender, req, l)
-		} else if netErr, ok := err.(net.Error); ok && netErr.Temporary() {
-			l.Infof("error while receiving: %s", err.Error())
-		} else {
-			l.Warnf("error while receiving: %s", err.Error())
-		}
-	}
-}
-
-func (l *listener) Stop() {
-	close(l.done)
-	l.conn.Close()
-	l.Wait()
-}
-
-func (l *listener) receiveRequest() (sender *net.UDPAddr, req *http.Request, err error) {
+func (r *Responder) receiveRequest() (sender *net.UDPAddr, req *http.Request, err error) {
 	var buf [2048]byte
-	n, _, sdr, err := l.conn.ReadFrom(buf[:])
+	n, _, sdr, err := r.conn.ReadFrom(buf[:])
 	if err != nil {
 		return
 	}
@@ -169,8 +106,8 @@ func (l *listener) receiveRequest() (sender *net.UDPAddr, req *http.Request, err
 	return
 }
 
-func (l *listener) handle(sender *net.UDPAddr, req *http.Request, log logging.Logger) {
-	log = log.With(
+func (r *Responder) handle(sender *net.UDPAddr, req *http.Request) {
+	log := r.Logger.With(
 		zap.Namespace("request"),
 		"remote", sender.String(),
 		"method", req.Method,
@@ -182,7 +119,7 @@ func (l *listener) handle(sender *net.UDPAddr, req *http.Request, log logging.Lo
 		return
 	}
 
-	conn, err := l.openReplyConn(sender, req.Header.Get("TCPPORT.UPNP.ORG"), log)
+	conn, err := r.openReplyConn(sender, req.Header.Get("TCPPORT.UPNP.ORG"), log)
 	if err != nil {
 		log.Warnf("could not open reply connection: %s", err.Error())
 		return
@@ -195,7 +132,7 @@ func (l *listener) handle(sender *net.UDPAddr, req *http.Request, log logging.Lo
 	)
 
 	maxDelay := readMaxDelay(req.Header, log)
-	sts := l.resolveST(req.Header.Get("ST"))
+	sts := r.resolveST(req.Header.Get("ST"))
 	if len(sts) == 0 {
 		log.Debugf("no notification types matching %q", req.Header.Get("ST"))
 		return
@@ -203,12 +140,12 @@ func (l *listener) handle(sender *net.UDPAddr, req *http.Request, log logging.Lo
 	maxDelay = maxDelay / time.Duration(len(sts))
 
 	for _, st := range sts {
-		l.sendResponse(conn, st, maxDelay, log.With("st", st))
+		r.sendResponse(conn, st, maxDelay, log.With("st", st))
 	}
 }
 
-func (l *listener) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log logging.Logger) (conn net.Conn, err error) {
-	ip, err := l.findLocalIPFor(sender)
+func (r *Responder) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log logging.Logger) (conn net.Conn, err error) {
+	ip, err := r.findLocalIPFor(sender)
 	if err != nil {
 		return
 	}
@@ -224,14 +161,14 @@ func (l *listener) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log 
 	return net.DialTCP("udp", &net.TCPAddr{IP: ip}, &net.TCPAddr{IP: sender.IP, Port: port})
 }
 
-func (l *listener) sendResponse(conn net.Conn, st string, maxDelay time.Duration, log logging.Logger) {
+func (r *Responder) sendResponse(conn net.Conn, st string, maxDelay time.Duration, log logging.Logger) {
 	delay := time.Duration(rand.Int63n(int64(maxDelay)))
 	select {
 	case <-time.After(delay):
-	case <-l.done:
+	case <-r.done:
 		return
 	}
-	_, err := l.writeResponse(conn, mustGetIP(conn.LocalAddr()), st)
+	_, err := r.writeResponse(conn, mustGetIP(conn.LocalAddr()), st)
 	if err != nil {
 		log.Warnf("could not send: %s", err.Error())
 	} else {
@@ -257,8 +194,8 @@ func readMaxDelay(headers http.Header, log logging.Logger) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func (l *listener) resolveST(st string) []string {
-	types := l.allTypes()
+func (r *Responder) resolveST(st string) []string {
+	types := r.allTypes()
 	if st == "ssdp:all" {
 		return types
 	}
@@ -282,23 +219,23 @@ const responseTpl = "HTTP/1.1 200 OK\r\n" +
 	"CONFIGID.UPNP.ORG: %d\r\n" +
 	"\r\n"
 
-func (l *listener) writeResponse(conn net.Conn, ip net.IP, st string) (int, error) {
+func (r *Responder) writeResponse(conn net.Conn, ip net.IP, st string) (int, error) {
 	return fmt.Fprintf(
 		conn,
 		responseTpl,
-		5*l.NotifyInterval/2/time.Second,
+		5*r.NotifyInterval/2/time.Second,
 		time.Now().Format(time.RFC1123),
-		l.Location(ip),
-		l.Server,
+		r.Location(ip),
+		r.Server,
 		st,
-		l.usnFromTarget(st),
-		l.BootID,
-		l.ConfigID,
+		r.usnFromTarget(st),
+		r.BootID,
+		r.ConfigID,
 	)
 }
 
-func (l *listener) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error) {
-	ifaces, err := l.Interfaces()
+func (r *Responder) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error) {
+	ifaces, err := r.Interfaces()
 	if err != nil {
 		return
 	}
@@ -318,6 +255,8 @@ func (l *listener) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error)
 				if val.IP.Equal(senderIP) {
 					return val.IP, nil
 				}
+			default:
+				r.Debugf("ignoring unhandled addr type %#v", addr)
 			}
 		}
 	}
