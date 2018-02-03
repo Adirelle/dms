@@ -170,7 +170,7 @@ type Icon struct {
 
 type Config struct {
 	// Path to serve
-	RootObjectPath string
+	RootObjectPath string `json:"path"`
 	// Name to announce
 	FriendlyName string
 	// Log heades of HTTP requests

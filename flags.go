@@ -12,7 +12,7 @@ func setupFlags(config *dmsConfig) {
 
 	flag.Var(configFileVar{config}, "config", "json configuration file")
 
-	flag.StringVar(&config.Path, "path", ".", "browse root path")
+	flag.StringVar(&config.RootObjectPath, "path", ".", "browse root path")
 	flag.Var(tcpAddrVar{config.HTTP}, "http", "http server port")
 	flag.Var(ifaceVar{&config.Interface}, "ifname", "network interface to bind to")
 	flag.StringVar(&config.FriendlyName, "friendlyName", "", "server friendly name")

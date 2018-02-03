@@ -13,7 +13,6 @@ import (
 type dmsConfig struct {
 	dms.Config
 	Logging          logging.Config
-	Path             string
 	Interface        *net.Interface
 	HTTP             *net.TCPAddr
 	FFprobeCachePath string
