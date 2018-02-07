@@ -470,116 +470,6 @@ func (me *Server) serveIcon(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", time.Now(), bytes.NewReader(body))
 }
 
-func (server *Server) contentDirectoryInitialEvent(urls []*url.URL, sid string) {
-	body := xmlMarshalOrPanic(upnp.PropertySet{
-		Properties: []upnp.Property{
-			upnp.Property{
-				Variable: upnp.Variable{
-					XMLName: xml.Name{
-						Local: "SystemUpdateID",
-					},
-					Value: "0",
-				},
-			},
-			// upnp.Property{
-			// 	Variable: upnp.Variable{
-			// 		XMLName: xml.Name{
-			// 			Local: "ContainerUpdateIDs",
-			// 		},
-			// 	},
-			// },
-			// upnp.Property{
-			// 	Variable: upnp.Variable{
-			// 		XMLName: xml.Name{
-			// 			Local: "TransferIDs",
-			// 		},
-			// 	},
-			// },
-		},
-		Space: "urn:schemas-upnp-org:event-1-0",
-	})
-	body = append([]byte(`<?xml version="1.0"?>`+"\n"), body...)
-	eventingLogger.Print(string(body))
-	for _, _url := range urls {
-		bodyReader := bytes.NewReader(body)
-		req, err := http.NewRequest("NOTIFY", _url.String(), bodyReader)
-		if err != nil {
-			server.L.Errorf("could not create a request to notify %s: %s", _url.String(), err)
-			continue
-		}
-		req.Header["CONTENT-TYPE"] = []string{`text/xml; charset="utf-8"`}
-		req.Header["NT"] = []string{"upnp:event"}
-		req.Header["NTS"] = []string{"upnp:propchange"}
-		req.Header["SID"] = []string{sid}
-		req.Header["SEQ"] = []string{"0"}
-		// req.Header["TRANSFER-ENCODING"] = []string{"chunked"}
-		// req.ContentLength = int64(bodyReader.Len())
-		eventingLogger.Print(req.Header)
-		eventingLogger.Print("starting notify")
-		resp, err := http.DefaultClient.Do(req)
-		eventingLogger.Print("finished notify")
-		if err != nil {
-			server.L.Errorf("could not notify %s: %s", _url.String(), err)
-			continue
-		}
-		eventingLogger.Print(resp)
-		b, _ := ioutil.ReadAll(resp.Body)
-		eventingLogger.Println(string(b))
-		resp.Body.Close()
-	}
-}
-
-var eventingLogger = log.New(ioutil.Discard, "", 0)
-
-func (server *Server) contentDirectoryEventSubHandler(w http.ResponseWriter, r *http.Request) {
-	if server.StallEventSubscribe {
-		// I have an LG TV that doesn't like my eventing implementation.
-		// Returning unimplemented (501?) errors, results in repeat subscribe
-		// attempts which hits some kind of error count limit on the TV
-		// causing it to forcefully disconnect. It also won't work if the CDS
-		// service doesn't include an EventSubURL. The best thing I can do is
-		// cause every attempt to subscribe to timeout on the TV end, which
-		// reduces the error rate enough that the TV continues to operate
-		// without eventing.
-		//
-		// I've not found a reliable way to identify this TV, since it and
-		// others don't seem to include any client-identifying headers on
-		// SUBSCRIBE requests.
-		//
-		// TODO: Get eventing to work with the problematic TV.
-		t := time.Now()
-		<-w.(http.CloseNotifier).CloseNotify()
-		eventingLogger.Printf("stalled subscribe connection went away after %s", time.Since(t))
-		return
-	}
-	// The following code is a work in progress. It partially implements
-	// the spec on eventing but hasn't been completed as I have nothing to
-	// test it with.
-	eventingLogger.Print(r.Header)
-	service := server.services["ContentDirectory"]
-	eventingLogger.Println(r.RemoteAddr, r.Method, r.Header.Get("SID"))
-	if r.Method == "SUBSCRIBE" && r.Header.Get("SID") == "" {
-		urls := upnp.ParseCallbackURLs(r.Header.Get("CALLBACK"))
-		eventingLogger.Println(urls)
-		var timeout int
-		fmt.Sscanf(r.Header.Get("TIMEOUT"), "Second-%d", &timeout)
-		eventingLogger.Println(timeout, r.Header.Get("TIMEOUT"))
-		sid, timeout, _ := service.Subscribe(urls, timeout)
-		w.Header()["SID"] = []string{sid}
-		w.Header()["TIMEOUT"] = []string{fmt.Sprintf("Second-%d", timeout)}
-		// TODO: Shouldn't have to do this to get headers logged.
-		w.WriteHeader(http.StatusOK)
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			server.contentDirectoryInitialEvent(urls, sid)
-		}()
-	} else if r.Method == "SUBSCRIBE" {
-		http.Error(w, "meh", http.StatusPreconditionFailed)
-	} else {
-		eventingLogger.Printf("unhandled event method: %s", r.Method)
-	}
-}
-
 func (server *Server) initMux(mux *http.ServeMux) {
 	mux.HandleFunc("/", func(resp http.ResponseWriter, req *http.Request) {
 		resp.Header().Set("content-type", "text/html")
@@ -594,7 +484,6 @@ func (server *Server) initMux(mux *http.ServeMux) {
 			server.L.Error(err)
 		}
 	})
-	mux.HandleFunc(contentDirectoryEventSubURL, server.contentDirectoryEventSubHandler)
 	mux.HandleFunc(iconPath, server.serveIcon)
 	mux.HandleFunc(resPath, func(w http.ResponseWriter, r *http.Request) {
 		filePath := server.filePath(r.URL.Query().Get("path"))
