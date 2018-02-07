@@ -122,14 +122,18 @@ func (me *Server) httpPort() int {
 	return me.HTTPConn.Addr().(*net.TCPAddr).Port
 }
 
+var fixedHeaders = map[string]string{
+	"Ext":    "",
+	"Server": ServerToken,
+}
+
 func (me *Server) serveHTTP() {
 
-	baseHandler := me.logHeaderHandler(me.httpServeMux.ServeHTTP)
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Ext", "")
-		w.Header().Set("Server", ServerToken)
-		baseHandler(w, r)
-	})
+	handler := AddHeaders(fixedHeaders, me.httpServeMux)
+	if me.LogHeaders {
+		handler = AddHeaderLogger(handler)
+	}
+	handler = AddLogger(me.L, handler)
 
 	srv := &http.Server{Handler: handler}
 	err := srv.Serve(me.HTTPConn)
@@ -141,21 +145,6 @@ func (me *Server) serveHTTP() {
 	if err != nil {
 		me.L.Error(err)
 	}
-}
-
-func (me *Server) logHeaderHandler(next http.HandlerFunc) http.HandlerFunc {
-	if !me.LogHeaders {
-		return next
-	}
-	hl := me.L.Named("headers")
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hl.Infof("%s %s", r.Method, r.RequestURI)
-		r.Header.Write(os.Stderr)
-		next(&mitmRespWriter{
-			ResponseWriter: w,
-			logHeader:      me.LogHeaders,
-		}, r)
-	})
 }
 
 var (
@@ -380,41 +369,6 @@ func xmlMarshalOrPanic(value interface{}) []byte {
 		log.Panicf("xmlMarshalOrPanic failed to marshal %v: %s", value, err)
 	}
 	return ret
-}
-
-// TODO: Document the use of this for debugging.
-type mitmRespWriter struct {
-	http.ResponseWriter
-	loggedHeader bool
-	logHeader    bool
-}
-
-func (me *mitmRespWriter) WriteHeader(code int) {
-	me.doLogHeader(code)
-	me.ResponseWriter.WriteHeader(code)
-}
-
-func (me *mitmRespWriter) doLogHeader(code int) {
-	if !me.logHeader {
-		return
-	}
-	fmt.Fprintln(os.Stderr, code)
-	for k, v := range me.Header() {
-		fmt.Fprintln(os.Stderr, k, v)
-	}
-	fmt.Fprintln(os.Stderr)
-	me.loggedHeader = true
-}
-
-func (me *mitmRespWriter) Write(b []byte) (int, error) {
-	if !me.loggedHeader {
-		me.doLogHeader(200)
-	}
-	return me.ResponseWriter.Write(b)
-}
-
-func (me *mitmRespWriter) CloseNotify() <-chan bool {
-	return me.ResponseWriter.(http.CloseNotifier).CloseNotify()
 }
 
 // Set the SCPD serve paths.
