@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -190,42 +189,34 @@ type Server struct {
 	configID       string
 	closed         chan struct{}
 	ssdpStopped    chan struct{}
-	services       map[string]UPnPService
 	done           chan struct{}
 	w              sync.WaitGroup
-}
-
-// UPnP SOAP service.
-type UPnPService interface {
-	Handle(action string, argsXML []byte, r *http.Request) (respArgs map[string]string, err error)
-	Subscribe(callback []*url.URL, timeoutSeconds int) (sid string, actualTimeout int, err error)
-	Unsubscribe(sid string) error
 }
 
 // update the UPnP object fields from ffprobe data
 // priority is given the format section, and then the streams sequentially
 func itemExtra(item *upnpav.Object, info *ffprobe.Info) {
-	setFromTags := func(m map[string]interface{}) {
-		for key, val := range m {
-			setIfUnset := func(s *string) {
-				if *s == "" {
-					*s = val.(string)
-				}
-			}
-			switch strings.ToLower(key) {
-			case "tag:artist":
-				setIfUnset(&item.Artist)
-			case "tag:album":
-				setIfUnset(&item.Album)
-			case "tag:genre":
-				setIfUnset(&item.Genre)
-			}
-		}
-	}
-	setFromTags(info.Format)
-	for _, m := range info.Streams {
-		setFromTags(m)
-	}
+	// setFromTags := func(m map[string]interface{}) {
+	// 	for key, val := range m {
+	// 		setIfUnset := func(s *string) {
+	// 			if *s == "" {
+	// 				*s = val.(string)
+	// 			}
+	// 		}
+	// 		switch strings.ToLower(key) {
+	// 		case "tag:artist":
+	// 			setIfUnset(&item.Artist)
+	// 		case "tag:album":
+	// 			setIfUnset(&item.Album)
+	// 		case "tag:genre":
+	// 			setIfUnset(&item.Genre)
+	// 		}
+	// 	}
+	// }
+	// setFromTags(info.Format)
+	// for _, m := range info.Streams {
+	// 	setFromTags(m)
+	// }
 }
 
 func transcodeResources(host, path, resolution, duration string) (ret []upnpav.Resource) {
@@ -391,61 +382,6 @@ func handleSCPDs(mux *http.ServeMux) {
 	}
 }
 
-// Marshal SOAP response arguments into a response XML snippet.
-func marshalSOAPResponse(sa upnp.SoapAction, args map[string]string) []byte {
-	soapArgs := make([]soap.Arg, 0, len(args))
-	for argName, value := range args {
-		soapArgs = append(soapArgs, soap.Arg{
-			XMLName: xml.Name{Local: argName},
-			Value:   value,
-		})
-	}
-	return []byte(fmt.Sprintf(`<u:%[1]sResponse xmlns:u="%[2]s">%[3]s</u:%[1]sResponse>`, sa.Action, sa.ServiceURN.String(), xmlMarshalOrPanic(soapArgs)))
-}
-
-// Handle a SOAP request and return the response arguments or UPnP error.
-func (me *Server) soapActionResponse(sa upnp.SoapAction, actionRequestXML []byte, r *http.Request) (map[string]string, error) {
-	service, ok := me.services[sa.Type]
-	if !ok {
-		// TODO: What's the invalid service error?!
-		return nil, upnp.Errorf(upnp.InvalidActionErrorCode, "Invalid service: %s", sa.Type)
-	}
-	return service.Handle(sa.Action, actionRequestXML, r)
-}
-
-// Handle a service control HTTP request.
-func (me *Server) serviceControlHandler(w http.ResponseWriter, r *http.Request) {
-	soapActionString := r.Header.Get("SOAPACTION")
-	soapAction, err := upnp.ParseActionHTTPHeader(soapActionString)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	var env soap.Envelope
-	if err := xml.NewDecoder(r.Body).Decode(&env); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	//AwoX/1.1 UPnP/1.0 DLNADOC/1.50
-	//log.Println(r.UserAgent())
-	w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
-	w.Header().Set("Ext", "")
-	w.Header().Set("Server", ServerToken)
-	soapRespXML, code := func() ([]byte, int) {
-		respArgs, err := me.soapActionResponse(soapAction, env.Body.Action, r)
-		if err != nil {
-			upnpErr := upnp.ConvertError(err)
-			return xmlMarshalOrPanic(soap.NewFault("UPnPError", upnpErr)), 500
-		}
-		return marshalSOAPResponse(soapAction, respArgs), 200
-	}()
-	bodyStr := fmt.Sprintf(`<?xml version="1.0" encoding="utf-8" standalone="yes"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>%s</s:Body></s:Envelope>`, soapRespXML)
-	w.WriteHeader(code)
-	if _, err := w.Write([]byte(bodyStr)); err != nil {
-		me.L.Error(err)
-	}
-}
-
 func safeFilePath(root, given string) string {
 	return filepath.Join(root, filepath.FromSlash(path.Clean("/" + given))[1:])
 }
@@ -523,7 +459,13 @@ func (server *Server) initMux(mux *http.ServeMux) {
 		w.Write(server.rootDescXML)
 	})
 	handleSCPDs(mux)
-	mux.HandleFunc(serviceControlURL, server.serviceControlHandler)
+
+	soapServer := soap.New(server.L)
+	cds := &contentDirectoryService{Server: server}
+	cds.RegisterTo(soapServer)
+	mux.Handle(serviceControlURL, soapServer)
+	//mux.HandleFunc(serviceControlURL, server.serviceControlHandler)
+
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	for i, di := range server.Icons {
 		mux.HandleFunc(fmt.Sprintf("%s/%d", deviceIconPath, i), func(w http.ResponseWriter, r *http.Request) {
@@ -533,24 +475,7 @@ func (server *Server) initMux(mux *http.ServeMux) {
 	}
 }
 
-func (s *Server) initServices() (err error) {
-	urn, err := upnp.ParseServiceType(services[0].ServiceType)
-	if err != nil {
-		return
-	}
-	s.services = map[string]UPnPService{
-		urn.Type: &contentDirectoryService{
-			Server: s,
-		},
-	}
-	return
-}
-
 func (srv *Server) Serve() {
-	var err error
-	if err = srv.initServices(); err != nil {
-		srv.L.Panicf("could not initialize UPNP services: %s", err.Error())
-	}
 	srv.done = make(chan struct{})
 	srv.w.Add(1)
 	defer func() {
@@ -558,6 +483,7 @@ func (srv *Server) Serve() {
 		srv.w.Done()
 	}()
 
+	var err error
 	if srv.FriendlyName == "" {
 		srv.FriendlyName = getDefaultFriendlyName()
 	}
