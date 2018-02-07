@@ -1,6 +1,10 @@
 package logging
 
-import "testing"
+import (
+	"io"
+	"io/ioutil"
+	"testing"
+)
 
 // NewTesting creates a logger that forwards everything to the testing log.
 func NewTesting(t *testing.T) Logger {
@@ -35,3 +39,10 @@ func (l *testingLogger) Warnw(s string, a ...interface{})   { l.t.Log(append([]i
 func (l *testingLogger) Named(string) Logger                { return l }
 func (l *testingLogger) With(...interface{}) Logger         { return l }
 func (l *testingLogger) Sync() error                        { return nil }
+func (l *testingLogger) Writer() io.WriteCloser             { return nopWriter{ioutil.Discard} }
+
+type nopWriter struct{ io.Writer }
+
+func (nopWriter) Close() error {
+	return nil
+}

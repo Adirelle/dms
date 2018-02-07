@@ -1,7 +1,9 @@
 package logging
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -40,6 +42,8 @@ type Logger interface {
 	Named(string) Logger
 	With(...interface{}) Logger
 	Sync() error
+
+	Writer() io.WriteCloser
 }
 
 type Config struct {
@@ -85,25 +89,40 @@ func Wrap(logger interface{}, err error) Logger {
 	if err == nil {
 		switch wrapped := logger.(type) {
 		case *zap.Logger:
-			return &wrapper{*wrapped.Sugar()}
+			return &wrapper{wrapped.Sugar()}
 		case *zap.SugaredLogger:
-			return &wrapper{*wrapped}
+			return &wrapper{wrapped}
 		}
 		err = fmt.Errorf("Unknown logger type: %T", logger)
 	}
 	panic(err.Error())
 }
 
-type wrapper struct{ zap.SugaredLogger }
+type wrapper struct{ *zap.SugaredLogger }
 
 func (w *wrapper) Named(name string) Logger {
-	return &wrapper{*w.SugaredLogger.Named(name)}
+	return &wrapper{w.SugaredLogger.Named(name)}
 }
 
 func (w *wrapper) With(args ...interface{}) Logger {
-	return &wrapper{*w.SugaredLogger.With(args...)}
+	return &wrapper{w.SugaredLogger.With(args...)}
 }
 
 func (w *wrapper) Sync() error {
 	return w.SugaredLogger.Sync()
+}
+
+func (w *wrapper) Writer() io.WriteCloser {
+	return &writer{l: w}
+}
+
+type writer struct {
+	bytes.Buffer
+	l Logger
+}
+
+func (w *writer) Close() error {
+	w.l.Info(w.String())
+	w.Reset()
+	return nil
 }
