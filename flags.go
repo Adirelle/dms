@@ -26,6 +26,7 @@ func setupFlags(config *dmsConfig) {
 	flag.BoolVar(&config.StallEventSubscribe, "stallEventSubscribe", false, "workaround for some bad event subscribers")
 	flag.BoolVar(&config.IgnoreHidden, "ignoreHidden", false, "ignore hidden files and directories")
 	flag.BoolVar(&config.IgnoreUnreadable, "ignoreUnreadable", false, "ignore unreadable files and directories")
+	flag.StringVar(&config.AccessLogPath, "accessLogPath", "", "path to log HTTP requests")
 
 	flag.BoolVar(&config.Logging.Debug, "debug", false, "Enable development logging")
 	flag.Var(stringsVar(config.Logging.OutputPaths), "logPath", "Log files")

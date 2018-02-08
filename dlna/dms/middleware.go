@@ -3,36 +3,45 @@ package dms
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 
 	"github.com/anacrolix/dms/logging"
+	"github.com/gorilla/handlers"
 )
 
-func AddHeaders(values map[string]string, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wh := w.Header()
-		for k, v := range values {
-			wh.Set(k, v)
-		}
-		next.ServeHTTP(w, r)
-	})
+func SetHeadersHandler(headers map[string]string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			wh := w.Header()
+			for k, v := range headers {
+				wh.Set(k, v)
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
-func AddLogger(l logging.Logger, next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		next.ServeHTTP(w, logging.RequestWithLogger(r, l))
-	})
+func WithLoggerHandler(l logging.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			next.ServeHTTP(w, logging.RequestWithLogger(r, l))
+		})
+	}
 }
 
-func AddHeaderLogger(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		target := logging.FromRequest(r).Writer()
-		defer target.Close()
-		fmt.Fprintf(target, "%s %s %s\r\n", r.Method, r.URL.String(), r.Proto)
-		r.Header.Write(target)
-		io.Copy(target, r.Body)
-		next.ServeHTTP(&headerLogger{w: w, target: target}, r)
-	})
+func LogHeaderHandler() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			target := logging.FromRequest(r).Writer()
+			defer target.Close()
+			fmt.Fprintf(target, "%s %s %s\r\n", r.Method, r.URL.String(), r.Proto)
+			r.Header.Write(target)
+			io.Copy(target, r.Body)
+			next.ServeHTTP(&headerLogger{w: w, target: target}, r)
+		})
+	}
 }
 
 type headerLogger struct {
@@ -64,5 +73,28 @@ func (l *headerLogger) CloseNotify() <-chan bool {
 	if cn, ok := l.w.(http.CloseNotifier); ok {
 		return cn.CloseNotify()
 	}
+	return nil
+}
+
+func AccessLogHandler(w io.Writer) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return handlers.CombinedLoggingHandler(w, next)
+	}
+}
+
+func OpenAccessLogFile(path string) io.WriteCloser {
+	if path == "-" {
+		return nopWriterCloser{os.Stdout}
+	}
+	out, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0640)
+	if err != nil {
+		log.Panicf("could not open access log file: %s", err.Error())
+	}
+	return out
+}
+
+type nopWriterCloser struct{ io.Writer }
+
+func (nopWriterCloser) Close() error {
 	return nil
 }

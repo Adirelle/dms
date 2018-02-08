@@ -31,6 +31,8 @@ import (
 	"github.com/anacrolix/dms/upnp"
 	"github.com/anacrolix/dms/upnpav"
 	"github.com/anacrolix/ffprobe"
+	"github.com/gorilla/handlers"
+	"github.com/justinas/alice"
 )
 
 const (
@@ -128,13 +130,23 @@ var fixedHeaders = map[string]string{
 
 func (me *Server) serveHTTP() {
 
-	handler := AddHeaders(fixedHeaders, me.httpServeMux)
-	if me.LogHeaders {
-		handler = AddHeaderLogger(handler)
-	}
-	handler = AddLogger(me.L, handler)
+	chain := alice.New(
+		handlers.RecoveryHandler(handlers.PrintRecoveryStack(true)),
+		SetHeadersHandler(fixedHeaders),
+		WithLoggerHandler(me.L),
+	)
 
-	srv := &http.Server{Handler: handler}
+	if me.LogHeaders {
+		chain = alice.New(LogHeaderHandler()).Extend(chain)
+	}
+
+	if me.AccessLogPath != "" {
+		out := OpenAccessLogFile(me.AccessLogPath)
+		defer out.Close()
+		chain = alice.New(AccessLogHandler(out)).Extend(chain)
+	}
+
+	srv := &http.Server{Handler: chain.Then(me.httpServeMux)}
 	err := srv.Serve(me.HTTPConn)
 	select {
 	case <-me.done:
@@ -172,6 +184,8 @@ type Config struct {
 	IgnoreHidden bool
 	// Ignore unreadable files and directories
 	IgnoreUnreadable bool
+	// Logs request in CLF to the given file
+	AccessLogPath string
 }
 
 type Server struct {
