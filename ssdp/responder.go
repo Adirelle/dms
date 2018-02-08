@@ -112,7 +112,6 @@ func (r *Responder) handle(sender *net.UDPAddr, req *http.Request) {
 		"remote", sender.String(),
 		"method", req.Method,
 		"url", req.URL.String(),
-		"headers", req.Header,
 	)
 	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("MAN") != `"ssdp:discover"` {
 		log.Debugw("ignored request")
