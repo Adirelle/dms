@@ -368,14 +368,6 @@ func getDefaultFriendlyName() string {
 	}())
 }
 
-func xmlMarshalOrPanic(value interface{}) []byte {
-	ret, err := xml.MarshalIndent(value, "", "  ")
-	if err != nil {
-		log.Panicf("xmlMarshalOrPanic failed to marshal %v: %s", value, err)
-	}
-	return ret
-}
-
 // Set the SCPD serve paths.
 func init() {
 	for _, s := range services {
