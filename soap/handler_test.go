@@ -21,7 +21,7 @@ var sampleReq = `<?xml version="1.0" encoding="UTF-8"?>
 	</soapenv:Body>
 </soapenv:Envelope>`
 
-var expectedResp = `<?xml version="1.0" encoding="UTF-8"?><Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/" encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><Body><rep xmlns="http://www.example.com/ns/"><fileList><file>foo</file><file>bar</file></fileList></rep></Body></Envelope>`
+var expectedResp = `<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body><reply xmlns="http://www.example.com/ns/"><fileList><file>foo</file><file>bar</file></fileList></reply></s:Body></s:Envelope>`
 
 type TestArguments struct {
 	XMLName xml.Name `xml:"http://www.example.com/ns/ args"`
@@ -38,8 +38,8 @@ type TestAction struct {
 	t *testing.T
 }
 
-func (TestAction) Name() string {
-	return "MyAction"
+func (TestAction) Name() xml.Name {
+	return xml.Name{"http://www.example.com/ns/", "args"}
 }
 
 func (TestAction) EmptyArguments() interface{} {
@@ -59,9 +59,7 @@ func TestHandler(t *testing.T) {
 	logger := logging.NewTesting(t)
 	action := TestAction{t}
 
-	h := http.Header{}
-	h.Set("SoapAction", `"MyAction"`)
-	r := &http.Request{Method: "POST", Header: h, Body: ioutil.NopCloser(bytes.NewBufferString(sampleReq))}
+	r := &http.Request{Method: "POST", Body: ioutil.NopCloser(bytes.NewBufferString(sampleReq))}
 	r = logging.RequestWithLogger(r, logger)
 
 	srv := New(logger)
@@ -73,10 +71,9 @@ func TestHandler(t *testing.T) {
 	t.Logf("output: %s", w.buf.String())
 
 	if w.buf.String() != expectedResp {
+		t.Logf("expected: %s", expectedResp)
 		t.Fatalf("response mismatch")
 	}
-
-	t.Fatal("fail !")
 }
 
 type rwMock struct {
@@ -107,13 +104,10 @@ func ActionFuncToTest(args TestArguments, r *http.Request) (TestReply, error) {
 }
 
 func TestActionFunc(t *testing.T) {
-	a := ActionFunc("MyAction", ActionFuncToTest)
+	a := ActionFunc(xml.Name{"", "MyAction"}, ActionFuncToTest)
 	t.Logf("name=%s", a.Name())
 	t.Logf("emptyArg=%#v", a.EmptyArguments())
 
-	if a.Name() != "MyAction" {
-		t.Error("Action name mismatch")
-	}
 	args := a.EmptyArguments()
 	if _, ok := args.(TestArguments); !ok {
 		t.Error("Argument type mismatch")

@@ -1,6 +1,7 @@
 package upnpav
 
 import (
+	"bytes"
 	"encoding/xml"
 )
 
@@ -90,31 +91,17 @@ func NewItem(id, parentID, class, title string) Item {
 	return Item{object: newObject(id, parentID, class, title)}
 }
 
-type DIDLLite struct {
-	XMLName    xml.Name `xml:"urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/ DIDL-Lite"`
-	XMLNS_DC   string   `xml:"xmlns:dc,attr"`
-	XMLNS_UPNP string   `xml:"xmlns:upnp,attr"`
-	XMLNS_DLNA string   `xml:"xmlns:dlna,attr"`
-	Objects    []Object
-}
-
-func NewEmptyDIDLLite() *DIDLLite {
-	return NewDIDLLite(nil)
-}
-
-func NewDIDLLite(objs []Object) *DIDLLite {
-	return &DIDLLite{
-		XMLNS_DC:   "http://purl.org/dc/elements/1.1/",
-		XMLNS_UPNP: "urn:schemas-upnp-org:metadata-1-0/upnp/",
-		XMLNS_DLNA: "urn:schemas-dlna-org:metadata-1-0/",
-		Objects:    append(make([]Object, 0, len(objs)), objs...),
+func DIDLLite(objs []Object) (buf []byte, err error) {
+	b := bytes.Buffer{}
+	_, err = b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
+	if err != nil {
+		return
 	}
-}
-
-func (d *DIDLLite) AddObject(obj ...Object) {
-	d.Objects = append(d.Objects, obj...)
-}
-
-func (d *DIDLLite) NumObjects() int {
-	return len(d.Objects)
+	err = xml.NewEncoder(&b).Encode(objs)
+	if err != nil {
+		return
+	}
+	_, err = b.WriteString(`</DIDL-Lite>`)
+	buf = b.Bytes()
+	return
 }

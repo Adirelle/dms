@@ -28,14 +28,20 @@ type contentDirectoryService struct {
 type empty struct{}
 
 func (cds *contentDirectoryService) updateIDString() string {
-	return fmt.Sprintf("%d", uint32(os.Getpid()))
+	rootFI, err := os.Stat(cds.RootObjectPath)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%d", uint32(rootFI.ModTime().Unix()))
 }
 
+const xmlns = `urn:schemas-upnp-org:service:ContentDirectory:1`
+
 func (cds *contentDirectoryService) RegisterTo(s *soap.Server) {
-	s.RegisterAction(soap.ActionFunc("urn:schemas-upnp-org:service:ContentDirectory:1#GetSystemUpdateID", cds.GetSystemUpdateID))
-	s.RegisterAction(soap.ActionFunc("urn:schemas-upnp-org:service:ContentDirectory:1#GetSortCapabilities", cds.GetSortCapabilities))
-	s.RegisterAction(soap.ActionFunc("urn:schemas-upnp-org:service:ContentDirectory:1#GetSearchCapabilities", cds.GetSearchCapabilities))
-	s.RegisterAction(soap.ActionFunc("urn:schemas-upnp-org:service:ContentDirectory:1#Browse", cds.Browse))
+	s.RegisterAction(soap.ActionFunc(xml.Name{xmlns, "GetSystemUpdateID"}, cds.GetSystemUpdateID))
+	s.RegisterAction(soap.ActionFunc(xml.Name{xmlns, "GetSortCapabilities"}, cds.GetSortCapabilities))
+	s.RegisterAction(soap.ActionFunc(xml.Name{xmlns, "GetSearchCapabilities"}, cds.GetSearchCapabilities))
+	s.RegisterAction(soap.ActionFunc(xml.Name{xmlns, "Browse"}, cds.Browse))
 }
 
 // Turns the given entry and DMS host into a UPnP object. A nil object is
@@ -193,30 +199,33 @@ func (me *contentDirectoryService) objectFromID(id string) (o object, err error)
 }
 
 type systemUpdateIDResponse struct {
-	Name xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 GetSystemUpdateIDResponse"`
-	Id   string
+	XMLName xml.Name `xml:"u:GetSystemUpdateIDResponse"`
+	XMLNS   string   `xml:"xmlns:u,attr"`
+	Id      string
 }
 
 func (me *contentDirectoryService) GetSystemUpdateID(_ empty, _ *http.Request) (systemUpdateIDResponse, error) {
-	return systemUpdateIDResponse{Id: me.updateIDString()}, nil
+	return systemUpdateIDResponse{XMLNS: xmlns, Id: me.updateIDString()}, nil
 }
 
 type getSortCapabilitiesResponse struct {
-	Name     xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 GetSortCapabilitiesResponse"`
+	XMLName  xml.Name `xml:"u:GetSortCapabilitiesResponse"`
+	XMLNS    string   `xml:"xmlns:u,attr"`
 	SortCaps string
 }
 
 func (me *contentDirectoryService) GetSortCapabilities(_ empty, _ *http.Request) (getSortCapabilitiesResponse, error) {
-	return getSortCapabilitiesResponse{SortCaps: "dc:title"}, nil
+	return getSortCapabilitiesResponse{XMLNS: xmlns, SortCaps: "dc:title"}, nil
 }
 
 type getSearchCapabilitiesResponse struct {
-	Name       xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 GetSearchCapabilitiesResponse"`
+	XMLName    xml.Name `xml:"u:GetSearchCapabilitiesResponse"`
+	XMLNS      string   `xml:"xmlns:u,attr"`
 	SearchCaps string
 }
 
 func (me *contentDirectoryService) GetSearchCapabilities(_ empty, _ *http.Request) (getSearchCapabilitiesResponse, error) {
-	return getSearchCapabilitiesResponse{SearchCaps: ""}, nil
+	return getSearchCapabilitiesResponse{XMLNS: xmlns, SearchCaps: ""}, nil
 }
 
 type browseQuery struct {
@@ -226,17 +235,16 @@ type browseQuery struct {
 	Filter         string
 	StartingIndex  int
 	RequestedCount int
+	SortCriteria   string
 }
 
 type browseReply struct {
-	XMLName        xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 BrowseResponse"`
-	TotalMatches   int
+	XMLName        xml.Name `xml:"u:BrowseResponse"`
+	XMLNS          string   `xml:"xmlns:u,attr"`
+	Result         []byte
 	NumberReturned int
-	Result         browseReplyResults
-}
-
-type browseReplyResults struct {
-	DIDLLite *upnpav.DIDLLite
+	TotalMatches   int
+	UpdateID       string
 }
 
 func (me *contentDirectoryService) Browse(q browseQuery, req *http.Request) (rep browseReply, err error) {
@@ -244,26 +252,22 @@ func (me *contentDirectoryService) Browse(q browseQuery, req *http.Request) (rep
 	if err != nil {
 		return
 	}
-	var (
-		total int
-		objs  []upnpav.Object
-	)
+	var objs []upnpav.Object
 	switch q.BrowseFlag {
 	case "BrowseDirectChildren":
-		objs, total, err = me.BrowseDirectChildren(obj, q, req)
+		objs, rep.TotalMatches, err = me.BrowseDirectChildren(obj, q, req)
 	case "BrowseMetadata":
-		objs, total, err = me.BrowseMetadata(obj, req)
+		objs, rep.TotalMatches, err = me.BrowseMetadata(obj, req)
 	default:
 		err = upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
 	}
 	if err != nil {
 		return
 	}
-	rep = browseReply{
-		TotalMatches:   total,
-		NumberReturned: len(objs),
-		Result:         browseReplyResults{upnpav.NewDIDLLite(objs)},
-	}
+	rep.XMLNS = xmlns
+	rep.NumberReturned = len(objs)
+	rep.UpdateID = me.updateIDString()
+	rep.Result, err = upnpav.DIDLLite(objs)
 	return
 }
 

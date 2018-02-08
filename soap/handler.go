@@ -13,20 +13,20 @@ import (
 
 // Action is a SOAP action
 type Action interface {
-	Name() string
+	Name() xml.Name
 	EmptyArguments() interface{}
 	Handle(interface{}, *http.Request) (interface{}, error)
 }
 
 // Server holds the action map and can serve SOAP through HTTP
 type Server struct {
-	actions map[string]Action
+	actions map[xml.Name]Action
 	l       logging.Logger
 }
 
 // New creates an empty SOAP Server
 func New(l logging.Logger) *Server {
-	return &Server{make(map[string]Action), l.Named("soap")}
+	return &Server{make(map[xml.Name]Action), l.Named("soap")}
 }
 
 // RegisterAction adds a Handler for a given action
@@ -39,58 +39,39 @@ func (s *Server) RegisterAction(action Action) {
 	s.actions[name] = action
 }
 
+var (
+	responseHeader = []byte(`<?xml version="1.0" encoding="UTF-8"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/"><s:Body>`)
+	responseFooter = []byte(`</s:Body></s:Envelope>`)
+)
+
 // ServeHTTP implements http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	log := logging.FromRequest(r)
-
-	name, err := s.parseActionName(r)
+	res, err := s.serve(r)
 	if err != nil {
+		res = ConvertError("s:Server", err)
 		log.Warn(err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
 	}
-
-	action, found := s.actions[name]
-	if !found {
-		err = fmt.Errorf("Unhandled SOAP action: %q", name)
-		log.Warn(err.Error())
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	log = log.With("action", action.Name())
-
-	env := envelope{}
-	env.Body.unmarshalType = reflect.TypeOf(action.EmptyArguments())
-	err = xml.NewDecoder(r.Body).Decode(&env)
-	if err != nil {
-		msg := fmt.Sprintf("Could not parse request: %s", err.Error())
-		log.Warn(msg)
-		http.Error(w, msg, http.StatusBadRequest)
-		return
-	}
-
-	res, err := action.Handle(env.Body.value, r)
-	if err != nil {
-		log.Warnf("error while processing %q action: %s", name, err.Error())
-		res = Error(err)
-	}
-	env.Body.value = res
 
 	w.Header().Set("Content-Type", "application/soap+xml; charset=UTF-8")
-	err = xml.NewEncoder(w).Encode(env)
+	if _, err = w.Write(responseHeader); err == nil {
+		if err = xml.NewEncoder(w).Encode(res); err == nil {
+			_, err = w.Write(responseFooter)
+		}
+	}
 	if err != nil {
 		log.Warnf("error marshalling SOAP response: %s", err.Error())
 	}
 }
 
-func (s *Server) parseActionName(r *http.Request) (name string, err error) {
-	action := r.Header.Get("SoapAction")
-	if action == "" {
-		err = fmt.Errorf("missing SoapAction header")
-	} else if action[0] != '"' || action[len(action)-1] != '"' {
-		err = fmt.Errorf("invalid SoapAction header: %q", action)
+func (s *Server) serve(r *http.Request) (res interface{}, err error) {
+	env := envelope{}
+	payload := &(env.Body.Payload)
+	payload.actions = s.actions
+	if err = xml.NewDecoder(r.Body).Decode(&env); err == nil {
+		res, err = payload.action.Handle(payload.value, r)
 	} else {
-		name = action[1 : len(action)-1]
+		err = ConvertError("s:Client", err)
 	}
 	return
 }
@@ -98,34 +79,28 @@ func (s *Server) parseActionName(r *http.Request) (name string, err error) {
 type envelope struct {
 	XMLName       xml.Name `xml:"http://schemas.xmlsoap.org/soap/envelope/ Envelope"`
 	EncodingStyle string   `xml:"encodingStyle,attr"`
-	Body          payload  `xml:"Body"`
+	Body          struct {
+		Payload payload `xml:",any"`
+	} `xml:"Body"`
 }
 
 type payload struct {
-	value         interface{}
-	unmarshalType reflect.Type
+	actions map[xml.Name]Action
+	action  Action
+	value   interface{}
 }
 
 // UnmarshalXML creates a new value of type unmarshalType and unmarshals the XML element into it.
 func (p *payload) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
-	ptr := reflect.New(p.unmarshalType)
-	err := d.Decode(ptr.Interface())
-	if err == nil {
-		p.value = reflect.Indirect(ptr).Interface()
-		d.Skip()
+	var known bool
+	p.action, known = p.actions[start.Name]
+	if !known {
+		return Errorf("s:Client", "unknown action %s", start.Name)
 	}
+	ptr := reflect.New(reflect.TypeOf(p.action.EmptyArguments()))
+	err := d.DecodeElement(ptr.Interface(), &start)
+	p.value = reflect.Indirect(ptr).Interface()
 	return err
-}
-
-// MarshalXML marshals the Value as is.
-func (p payload) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error) {
-	if err = e.EncodeToken(start); err != nil {
-		return
-	}
-	if err = e.Encode(p.value); err != nil {
-		return
-	}
-	return e.EncodeToken(start.End())
 }
 
 // Fault is used to send errors
@@ -142,30 +117,26 @@ func (f *Fault) Error() string {
 }
 
 // Error converts any error into a SOAP Fault
-func Error(err error) *Fault {
+func ConvertError(code string, err error) *Fault {
 	if fault, ok := err.(*Fault); ok {
 		return fault
 	}
 	return &Fault{
-		Code:    "Client",
+		Code:    code,
 		Message: err.Error(),
 		Detail:  fmt.Sprintf("%#v", err),
 	}
 }
 
 // Errorf creates a SOAP Fault from an error message
-func Errorf(msg string, args ...interface{}) *Fault {
-	return &Fault{
-		Code:    "Client",
-		Message: fmt.Sprintf(msg, args...),
-		Detail:  fmt.Sprintf("%#v", args),
-	}
+func Errorf(code, msg string, args ...interface{}) *Fault {
+	return &Fault{Code: code, Message: fmt.Sprintf(msg, args...)}
 }
 
 // ActionFunc converts a function into an Action.
 // The function must conform to the func(A, *http.Request) (B, error) signature
 // where A and B are struct types.
-func ActionFunc(name string, f interface{}) Action {
+func ActionFunc(name xml.Name, f interface{}) Action {
 	v := reflect.ValueOf(f)
 	t := v.Type()
 	err := validateActionFuncType(t)
@@ -215,12 +186,12 @@ func validateActionFuncType(t reflect.Type) error {
 }
 
 type actionFunc struct {
-	name      string
+	name      xml.Name
 	argType   reflect.Type
 	funcValue reflect.Value
 }
 
-func (af *actionFunc) Name() string {
+func (af *actionFunc) Name() xml.Name {
 	return af.name
 }
 
