@@ -77,36 +77,27 @@ func makeFFProber(config *dmsConfig, logger logging.Logger) (ffmpeg.FFProber, *f
 }
 
 func makeHTTPServer(config *dmsConfig, ffProber ffmpeg.FFProber, l logging.Logger) *dms.Server {
-	ifaces, _ := config.ValidInterfaces()
-	return &dms.Server{
-		Config:     config.Config,
-		Interfaces: ifaces,
-		HTTPConn: func() net.Listener {
-			conn, err := net.ListenTCP("tcp", config.HTTP)
-			if err != nil {
-				l.Fatal(err)
-			}
-			return conn
-		}(),
-		Icons: []dms.Icon{
-			dms.Icon{
-				Width:      48,
-				Height:     48,
-				Depth:      8,
-				Mimetype:   "image/png",
-				ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic.png")),
-			},
-			dms.Icon{
-				Width:      128,
-				Height:     128,
-				Depth:      8,
-				Mimetype:   "image/png",
-				ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic 128.png")),
-			},
-		},
+	return dms.New(
+		config.Config
+		// Icons: []upnp.Icon{
+		// 	upnp.Icon{
+		// 		Width:      48,
+		// 		Height:     48,
+		// 		Depth:      8,
+		// 		Mimetype:   "image/png",
+		// 		ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic.png")),
+		// 	},
+		// 	upnp.Icon{
+		// 		Width:      128,
+		// 		Height:     128,
+		// 		Depth:      8,
+		// 		Mimetype:   "image/png",
+		// 		ReadSeeker: bytes.NewReader(MustAsset("data/VGC Sonic 128.png")),
+		// 	},
+		// },
 		FFProber: ffProber,
 		L:        l.Named("http"),
-	}
+	)
 }
 
 func makeSSDPConfig(config *dmsConfig, httpServer *dms.Server) ssdp.Config {

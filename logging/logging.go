@@ -98,6 +98,10 @@ func Wrap(logger interface{}, err error) Logger {
 	panic(err.Error())
 }
 
+func Panicf(tpl string, args ...interface{}) {
+	zap.L().Sugar().Panicf(tpl, args...)
+}
+
 type wrapper struct{ *zap.SugaredLogger }
 
 func (w *wrapper) Named(name string) Logger {

@@ -20,8 +20,7 @@ func New(l logging.Logger) *Server {
 }
 
 // RegisterAction adds a Handler for a given action
-func (s *Server) RegisterAction(action Action) {
-	name := action.Name()
+func (s *Server) RegisterAction(name xml.Name, action Action) {
 	if _, exist := s.actions[name]; exist {
 		s.l.DPanicf("action already registered: %s", name)
 		return

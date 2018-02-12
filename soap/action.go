@@ -1,7 +1,6 @@
 package soap
 
 import (
-	"encoding/xml"
 	"errors"
 	"log"
 	"net/http"
@@ -10,7 +9,6 @@ import (
 
 // Action is a SOAP action
 type Action interface {
-	Name() xml.Name
 	EmptyArguments() interface{}
 	Handle(interface{}, *http.Request) (interface{}, error)
 }
@@ -18,15 +16,14 @@ type Action interface {
 // ActionFunc converts a function into an Action.
 // The function must conform to the func(A, *http.Request) (B, error) signature
 // where A and B are struct types.
-func ActionFunc(name xml.Name, f interface{}) Action {
+func ActionFunc(f interface{}) Action {
 	v := reflect.ValueOf(f)
 	t := v.Type()
 	err := validateActionFuncType(t)
 	if err != nil {
-		log.Panicf("soap.ActionFunc(%q, %s): %s", name, t.String(), err.Error())
+		log.Panicf("soap.ActionFunc(%s): %s", t.String(), err.Error())
 	}
 	return &actionFunc{
-		name:      name,
 		argType:   t.In(0),
 		funcValue: v,
 	}
@@ -68,13 +65,8 @@ func validateActionFuncType(t reflect.Type) error {
 }
 
 type actionFunc struct {
-	name      xml.Name
 	argType   reflect.Type
 	funcValue reflect.Value
-}
-
-func (af *actionFunc) Name() xml.Name {
-	return af.name
 }
 
 func (af *actionFunc) EmptyArguments() interface{} {
