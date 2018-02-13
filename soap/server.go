@@ -16,7 +16,7 @@ type Server struct {
 
 // New creates an empty SOAP Server
 func New(l logging.Logger) *Server {
-	return &Server{make(map[xml.Name]Action), l.Named("soap")}
+	return &Server{make(map[xml.Name]Action), l}
 }
 
 // RegisterAction adds a Handler for a given action

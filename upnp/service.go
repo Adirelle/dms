@@ -49,11 +49,12 @@ type stateVariableDesc struct {
 // NewService initializes a new Service
 func NewService(id, urn string, l logging.Logger) *Service {
 	return &Service{
-		id:      id,
-		urn:     urn,
-		logger:  l.Named("service." + id),
-		actions: make(map[string]Action),
-		varMap:  make(map[string]stateVariableDesc),
+		id:          id,
+		urn:         urn,
+		logger:      l,
+		actions:     make(map[string]Action),
+		varMap:      make(map[string]stateVariableDesc),
+		SpecVersion: specVersion{1, 0},
 	}
 }
 
@@ -73,18 +74,21 @@ func (s *Service) AddAction(name string, action Action) {
 // AddActionFunc converts the given function to an action and adds it to the service.
 // It panics if the action already exists or if the function cannot be converted (see soap.ActionFunc()).
 func (s *Service) AddActionFunc(name string, f interface{}) {
-	s.AddActionFunc(name, ActionFunc(f))
+	s.AddAction(name, ActionFunc(f))
 }
 
 func (s *Service) describeArgumentsFrom(desc *actionDesc, direction string, str interface{}) {
 	refl := reflect.TypeOf(str)
 	for i := 0; i < refl.NumField(); i++ {
 		field := refl.Field(i)
-		desc.Arguments = append(desc.Arguments, argumentDesc{
-			Name:            findArgName(field),
-			Direction:       direction,
-			RelatedStateVar: s.describeStateVar(field),
-		})
+		varName := s.describeStateVar(field)
+		if varName != "" {
+			desc.Arguments = append(desc.Arguments, argumentDesc{
+				Name:            findArgName(field),
+				Direction:       direction,
+				RelatedStateVar: varName,
+			})
+		}
 	}
 }
 
@@ -106,6 +110,7 @@ var upnpTypeMap = map[string]string{
 	"int8":      "i1",
 	"int16":     "i2",
 	"int32":     "i4",
+	"int":       "i4",
 	"float32":   "r4",
 	"float64":   "r8",
 	"bool":      "boolean",
@@ -113,6 +118,7 @@ var upnpTypeMap = map[string]string{
 	"time.Time": "dateTime",
 	"url.URL":   "uri",
 	"uuid.UUID": "uuid",
+	"[]uint8":   "bin",
 }
 
 func (s *Service) describeStateVar(f reflect.StructField) (name string) {
@@ -124,14 +130,20 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	if parts[0] != "" {
 		name = parts[0]
 	}
+	if ignoreField(name, f.Type) {
+		name = ""
+		return
+	}
 	if _, exists := s.varMap[name]; exists {
 		return
 	}
 	stateVar := stateVariableDesc{Name: name, SendEvents: "no"}
 	if parts[1] != "" {
 		stateVar.DataType = parts[1]
+	} else if dt, ok := upnpTypeMap[f.Type.String()]; ok {
+		stateVar.DataType = dt
 	} else {
-		stateVar.DataType = upnpTypeMap[f.Type.String()]
+		logging.Panicf("cannot map type of field %s: %s", f.Name, f.Type.String())
 	}
 	if parts[2] != "" {
 		values := strings.Split(parts[2], ",")
@@ -140,4 +152,8 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	s.varMap[name] = stateVar
 	s.ServiceStateTable = append(s.ServiceStateTable, stateVar)
 	return
+}
+
+func ignoreField(name string, type_ reflect.Type) bool {
+	return name == "XMLName" || name == "XMLNS" || type_.String() == "xml.Name"
 }

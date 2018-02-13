@@ -43,7 +43,6 @@ func (c *Config) allTypes() []string {
 }
 
 func New(c Config, l logging.Logger) suture.Service {
-	l = l.Named("ssdp")
 	spv := suture.NewSimple("ssdp")
 	r := NewResponder(c, l)
 	spv.Add(r)

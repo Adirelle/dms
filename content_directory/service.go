@@ -3,7 +3,6 @@ package content_directory
 import (
 	"bytes"
 	"encoding/xml"
-	"fmt"
 	"net/http"
 
 	"github.com/anacrolix/dms/filesystem"
@@ -47,12 +46,16 @@ func NewService(backend Backend, fs filesystem.Filesystem, logger logging.Logger
 	return s
 }
 
-func (s *Service) updateID() string {
+func (s *Service) UPNPService() *upnp.Service {
+	return s.upnp
+}
+
+func (s *Service) updateID() uint32 {
 	root, err := s.fs.GetRootObject()
 	if err != nil {
 		s.logger.Panicf("could not fetch content-directory root: %s", err.Error())
 	}
-	return fmt.Sprintf("%d", root.ModTime().Unix()&0x7fff)
+	return uint32(root.ModTime().Unix() & 0x7fff)
 }
 
 type empty struct{}
@@ -60,7 +63,7 @@ type empty struct{}
 type systemUpdateIDResponse struct {
 	XMLName xml.Name `xml:"u:GetSystemUpdateIDResponse"`
 	XMLNS   string   `xml:"xmlns:u,attr"`
-	ID      string   `xml:"Id"`
+	ID      uint32   `xml:"Id" statevar:"SystemUpdateID"`
 }
 
 func (s *Service) GetSystemUpdateID(empty, *http.Request) (systemUpdateIDResponse, error) {
@@ -70,7 +73,7 @@ func (s *Service) GetSystemUpdateID(empty, *http.Request) (systemUpdateIDRespons
 type getSortCapabilitiesResponse struct {
 	XMLName  xml.Name `xml:"u:GetSortCapabilitiesResponse"`
 	XMLNS    string   `xml:"xmlns:u,attr"`
-	SortCaps string
+	SortCaps string   `statevar:"SortCapabilities"`
 }
 
 func (s *Service) GetSortCapabilities(empty, *http.Request) (getSortCapabilitiesResponse, error) {
@@ -80,7 +83,7 @@ func (s *Service) GetSortCapabilities(empty, *http.Request) (getSortCapabilities
 type getSearchCapabilitiesResponse struct {
 	XMLName    xml.Name `xml:"u:GetSearchCapabilitiesResponse"`
 	XMLNS      string   `xml:"xmlns:u,attr"`
-	SearchCaps string
+	SearchCaps string   `statevar:"SearchCapabilities"`
 }
 
 func (s *Service) GetSearchCapabilities(empty, *http.Request) (getSearchCapabilitiesResponse, error) {
@@ -89,21 +92,21 @@ func (s *Service) GetSearchCapabilities(empty, *http.Request) (getSearchCapabili
 
 type browseQuery struct {
 	XMLName        xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 Browse"`
-	ObjectID       string
-	BrowseFlag     string
-	Filter         string
-	StartingIndex  int
-	RequestedCount int
-	SortCriteria   string
+	ObjectID       string   `statevar:"A_ARG_TYPE_ObjectID"`
+	BrowseFlag     string   `statevar:"A_ARG_TYPE_BrowseFlag,string,BrowseMetadata,BrowseDirectChildren"`
+	Filter         string   `statevar:"A_ARG_TYPE_Filter"`
+	StartingIndex  uint32   `statevar:"A_ARG_TYPE_Index"`
+	RequestedCount uint32   `statevar:"A_ARG_TYPE_Count"`
+	SortCriteria   string   `statevar:"A_ARG_TYPE_SortCriteria"`
 }
 
 type browseReply struct {
 	XMLName        xml.Name `xml:"u:BrowseResponse"`
 	XMLNS          string   `xml:"xmlns:u,attr"`
-	Result         []byte
-	NumberReturned int
-	TotalMatches   int
-	UpdateID       string
+	Result         []byte   `statevar:"A_ARG_TYPE_Result,string"`
+	NumberReturned uint32   `statevar:"A_ARG_TYPE_Count"`
+	TotalMatches   uint32   `statevar:"A_ARG_TYPE_Count"`
+	UpdateID       uint32   `statevar:"A_ARG_TYPE_UpdateID"`
 }
 
 func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err error) {
@@ -124,7 +127,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err
 		return
 	}
 	rep.XMLNS = ServiceType
-	rep.NumberReturned = len(objs)
+	rep.NumberReturned = uint32(len(objs))
 	rep.UpdateID = s.updateID()
 	rep.Result, err = didlLite(objs)
 	return
@@ -142,7 +145,7 @@ func didlLite(objs []Object) ([]byte, error) {
 	return b.Bytes(), err
 }
 
-func (s *Service) browseDirectChildren(dir filesystem.Object, i int, n int) (objs []Object, total int, err error) {
+func (s *Service) browseDirectChildren(dir filesystem.Object, i uint32, n uint32) (objs []Object, total uint32, err error) {
 	if !dir.IsDir() {
 		return
 	}
@@ -150,7 +153,7 @@ func (s *Service) browseDirectChildren(dir filesystem.Object, i int, n int) (obj
 	if err != nil {
 		return
 	}
-	total = len(children)
+	total = uint32(len(children))
 	if i > total {
 		i = total
 	}
@@ -169,7 +172,7 @@ func (s *Service) browseDirectChildren(dir filesystem.Object, i int, n int) (obj
 	return
 }
 
-func (s *Service) browseMetadata(obj filesystem.Object) (objs []Object, total int, err error) {
+func (s *Service) browseMetadata(obj filesystem.Object) (objs []Object, total uint32, err error) {
 	cdObj, err := s.backend.Get(obj)
 	return []Object{cdObj}, 1, err
 }

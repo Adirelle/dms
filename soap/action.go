@@ -21,7 +21,7 @@ func ActionFunc(f interface{}) Action {
 	t := v.Type()
 	err := validateActionFuncType(t)
 	if err != nil {
-		log.Panicf("soap.ActionFunc(%s): %s", t.String(), err.Error())
+		log.Panicf("soap.ActionFunc(%#v): %s", f, err.Error())
 	}
 	return &actionFunc{
 		argType:   t.In(0),

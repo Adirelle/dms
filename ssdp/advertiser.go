@@ -28,7 +28,7 @@ type Advertiser struct {
 }
 
 func NewAdvertiser(c Config, rp func() int, l logging.Logger) *Advertiser {
-	return &Advertiser{Config: c, responderPort: rp, l: l.Named("advertiser")}
+	return &Advertiser{Config: c, responderPort: rp, l: l}
 }
 
 func (a *Advertiser) String() string {
@@ -42,9 +42,8 @@ func (a *Advertiser) Serve() {
 		a.done = nil
 		a.notifyAll(byebyeNTS, true)
 		a.w.Done()
-		a.l.Info("stopped advertiser")
 	}()
-	a.l.Info("started advertiser")
+	a.l.Info("advertiser started")
 	for {
 		go a.notifyAll(aliveNTS, false)
 		select {
@@ -58,6 +57,7 @@ func (a *Advertiser) Serve() {
 func (a *Advertiser) Stop() {
 	close(a.done)
 	a.w.Wait()
+	a.l.Info("advertiser stopped ")
 }
 
 func (a *Advertiser) notifyAll(nts string, immediate bool) {

@@ -26,7 +26,7 @@ type Responder struct {
 }
 
 func NewResponder(c Config, l logging.Logger) *Responder {
-	return &Responder{Config: c, Logger: l.Named("Responder")}
+	return &Responder{Config: c, Logger: l}
 }
 
 func (r *Responder) String() string {
@@ -44,6 +44,7 @@ func (r *Responder) Serve() {
 		r.conn.Close()
 		r.Done()
 	}()
+	r.Info("responder starting")
 
 	var err error
 
@@ -53,7 +54,7 @@ func (r *Responder) Serve() {
 		return
 	}
 
-	r.Infof("listening for SSDP request on %s", r.conn.LocalAddr().String())
+	r.Infof("listening for SSDP requests on %s", r.conn.LocalAddr().String())
 	for {
 		sender, req, err := r.receiveRequest()
 		select {
@@ -75,6 +76,7 @@ func (r *Responder) Stop() {
 	close(r.done)
 	r.conn.Close()
 	r.Wait()
+	r.Info("responder stopped")
 }
 
 func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
@@ -120,7 +122,7 @@ func (r *Responder) handle(sender *net.UDPAddr, req *http.Request) {
 
 	conn, err := r.openReplyConn(sender, req.Header.Get("TCPPORT.UPNP.ORG"), log)
 	if err != nil {
-		log.Warnf("could not open reply connection: %s", err.Error())
+		log.Debugf("could not open reply connection: %s", err.Error())
 		return
 	}
 	log = log.With(
@@ -157,7 +159,7 @@ func (r *Responder) openReplyConn(sender *net.UDPAddr, tcpPortHeader string, log
 	if err != nil {
 		return
 	}
-	return net.DialTCP("udp", &net.TCPAddr{IP: ip}, &net.TCPAddr{IP: sender.IP, Port: port})
+	return net.DialTCP("tcp", &net.TCPAddr{IP: ip}, &net.TCPAddr{IP: sender.IP, Port: port})
 }
 
 func (r *Responder) sendResponse(conn net.Conn, st string, maxDelay time.Duration, log logging.Logger) {
@@ -247,7 +249,7 @@ func (r *Responder) findLocalIPFor(sender *net.UDPAddr) (found net.IP, err error
 		for _, addr := range addrs {
 			switch val := addr.(type) {
 			case *net.IPNet:
-				if val.Contains(senderIP) {
+				if val.Contains(senderIP) || val.IP.Equal(senderIP) {
 					return val.IP, nil
 				}
 			case *net.IPAddr:
