@@ -1,39 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"net"
 	"strings"
-	"time"
 )
-
-func setupFlags(config *dmsConfig) {
-
-	flag.Var(configFileVar{config}, "config", "json configuration file")
-
-	flag.StringVar(&config.RootObjectPath, "path", ".", "browse root path")
-	flag.Var(tcpAddrVar{config.HTTP}, "http", "http server port")
-	flag.Var(ifaceVar{&config.Interface}, "ifname", "network interface to bind to")
-	flag.StringVar(&config.FriendlyName, "friendlyName", "", "server friendly name")
-	flag.StringVar(&config.FFprobeCachePath, "fFprobeCachePath", getDefaultFFprobeCachePath(), "path to FFprobe cache file")
-
-	flag.DurationVar(&config.NotifyInterval, "notifyInterval", 30*time.Minute, "interval between SSPD announces")
-
-	flag.BoolVar(&config.LogHeaders, "logHeaders", false, "log HTTP headers")
-	flag.BoolVar(&config.NoTranscode, "noTranscode", false, "disable transcoding")
-	flag.BoolVar(&config.NoProbe, "noProbe", false, "disable media probing with ffprobe")
-	flag.BoolVar(&config.StallEventSubscribe, "stallEventSubscribe", false, "workaround for some bad event subscribers")
-	flag.BoolVar(&config.IgnoreHidden, "ignoreHidden", false, "ignore hidden files and directories")
-	flag.BoolVar(&config.IgnoreUnreadable, "ignoreUnreadable", false, "ignore unreadable files and directories")
-	flag.StringVar(&config.AccessLogPath, "accessLogPath", "", "path to log HTTP requests")
-
-	flag.BoolVar(&config.Logging.Debug, "debug", false, "Enable development logging")
-	flag.Var(stringsVar(config.Logging.OutputPaths), "logPath", "Log files")
-	flag.Var(&config.Logging.Level, "logLevel", "Minimum log level")
-	flag.BoolVar(&config.Logging.NoDate, "logNoDate", false, "Disable timestamp in log")
-
-}
 
 type stringsVar []string
 
@@ -50,7 +21,7 @@ func (s stringsVar) Set(more string) error {
 	return nil
 }
 
-type configFileVar struct{ c *dmsConfig }
+type configFileVar struct{ c *Config }
 
 func (c configFileVar) String() string {
 	return ""
