@@ -4,11 +4,11 @@ package main
 
 const (
     CommitBranch = "master"
-    CommitRef = "98631e7"
-    CommitHash = "98631e758f791bf96e34a5b622433cd5bef6cd47"
-    CommitDate = "2018-02-13T09:45:07+01:00"
-    CommitDateUnix = 1518511507
+    CommitRef = "1.0-64-g59bbda7"
+    CommitHash = "59bbda7345d125cd76bc42b737d95d2265147aba"
+    CommitDate = "2018-02-14T00:23:08+01:00"
+    CommitDateUnix = 1518564188
 
-    BuildDate = "2018-02-13T23:56:42+01:00"
-    BuildDateUnixTS = 1518562602
+    BuildDate = "2018-02-14T00:24:38+01:00"
+    BuildDateUnixTS = 1518564279
 )
