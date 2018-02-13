@@ -2,14 +2,10 @@ package upnp
 
 import (
 	"encoding/xml"
-	"net/http"
 	"reflect"
 	"strings"
-	"time"
 
 	"github.com/anacrolix/dms/logging"
-	"github.com/anacrolix/dms/soap"
-	"github.com/gorilla/mux"
 )
 
 const (
@@ -78,35 +74,6 @@ func (s *Service) AddAction(name string, action Action) {
 // It panics if the action already exists or if the function cannot be converted (see soap.ActionFunc()).
 func (s *Service) AddActionFunc(name string, f interface{}) {
 	s.AddActionFunc(name, ActionFunc(f))
-}
-
-// RegisterRoutes register  an HTTP handler for the service
-func (s *Service) RegisterRoutes(r *mux.Router) {
-	sr := r.PathPrefix(s.id + "/").Subrouter()
-
-	srv := soap.New(s.logger)
-	for name, action := range s.actions {
-		srv.RegisterAction(xml.Name{Space: s.urn, Local: name}, action)
-	}
-	sr.Methods("POST").
-		Path(ServiceControlPath).
-		HeadersRegexp("Content-Type", "(text|application)/xml(;.*)?").
-		Handler(srv)
-
-	date := time.Now().Format(time.RFC1123)
-	sr.Methods("GET").
-		Path(SCPDPath).
-		HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", `text/xml; encoding="UTF-8"`)
-			w.Header().Set("Last-Modified", date)
-			_, err := w.Write([]byte(xml.Header))
-			if err == nil {
-				err = xml.NewEncoder(w).Encode(s)
-			}
-			if err != nil {
-				s.logger.Warnf("could not marshal service descriptor: %s", err.Error())
-			}
-		})
 }
 
 func (s *Service) describeArgumentsFrom(desc *actionDesc, direction string, str interface{}) {
