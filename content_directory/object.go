@@ -1,20 +1,13 @@
-package upnpav
+package content_directory
 
 import (
-	"bytes"
 	"encoding/xml"
-)
-
-const (
-	NoSuchObjectErrorCode = 701
-
-	ObjectClassStorageFolder = "object.container.storageFolder"
-	ObjectClassVideoItem
 )
 
 type Object interface {
 	AddResource(...Resource)
 	AddTag(...Tag)
+	GetTag(string) (string, bool)
 }
 
 type object struct {
@@ -27,8 +20,8 @@ type object struct {
 	Res        []Resource `xml:"res,omitempty"`
 }
 
-func newObject(id, parentID, class, title string) *object {
-	return &object{
+func newObject(id, parentID, class, title string) object {
+	return object{
 		ID:         id,
 		ParentID:   parentID,
 		Restricted: 1,
@@ -43,6 +36,21 @@ func (o *object) AddResource(res ...Resource) {
 
 func (o *object) AddTag(tags ...Tag) {
 	o.Tags = append(o.Tags, tags...)
+}
+
+func (o *object) GetTag(name string) (string, bool) {
+	if name == "dc:title" {
+		return o.Title, true
+	}
+	if name == "upnp:class" {
+		return o.Class, true
+	}
+	for _, tag := range o.Tags {
+		if tag.XMLName.Local == name {
+			return tag.Value, true
+		}
+	}
+	return "", false
 }
 
 type Resource struct {
@@ -70,12 +78,12 @@ type Tag struct {
 
 type Container struct {
 	XMLName xml.Name `xml:"container"`
-	*object
+	object
 	ChildCount int `xml:"childCount,attr,omitempty"`
 }
 
-func NewContainer(id, parentID, class, title string) Container {
-	return Container{object: newObject(id, parentID, class, title)}
+func NewContainer(id, parentID, class, title string) *Container {
+	return &Container{object: newObject(id, parentID, class, title)}
 }
 
 func (c *Container) SetChildCount(count int) {
@@ -84,24 +92,9 @@ func (c *Container) SetChildCount(count int) {
 
 type Item struct {
 	XMLName xml.Name `xml:"item"`
-	*object
+	object
 }
 
-func NewItem(id, parentID, class, title string) Item {
-	return Item{object: newObject(id, parentID, class, title)}
-}
-
-func DIDLLite(objs []Object) (buf []byte, err error) {
-	b := bytes.Buffer{}
-	_, err = b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
-	if err != nil {
-		return
-	}
-	err = xml.NewEncoder(&b).Encode(objs)
-	if err != nil {
-		return
-	}
-	_, err = b.WriteString(`</DIDL-Lite>`)
-	buf = b.Bytes()
-	return
+func NewItem(id, parentID, class, title string) *Item {
+	return &Item{object: newObject(id, parentID, class, title)}
 }
