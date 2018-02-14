@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net/http"
+	"reflect"
 
 	"encoding/json"
 	"flag"
@@ -180,6 +181,9 @@ func (c *Container) HTTPService() suture.Service {
 	if c.http == nil {
 		router := c.Router()
 
+		if c.Logging.Debug {
+			router.Methods("GET").Path("/debug/router").HandlerFunc(c.debugRouter)
+		}
 		router.Methods("GET").PathPrefix("/icons/").Handler(http.FileServer(assets.FileSystem))
 
 		c.http = &httpWrapper{
@@ -299,6 +303,43 @@ func (c *Container) Interfaces() ([]net.Interface, error) {
 		return net.Interfaces()
 	}
 	return []net.Interface{*c.Interface}, nil
+}
+
+func (c *Container) debugRouter(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", `text/plain; encoding="UTf-8"`)
+	err := c.Router().Walk(func(r *mux.Route, _ *mux.Router, _ []*mux.Route) error {
+		fmt.Fprintln(w, "-")
+		if name := r.GetName(); name != "" {
+			fmt.Fprintf(w, "\tname: %s\n", r.GetName())
+		}
+		if err := r.GetError(); err != nil {
+			fmt.Fprintf(w, "\terror: %s\n", err)
+		}
+		if v, err := r.GetHostTemplate(); err == nil {
+			fmt.Fprintf(w, "\thostT: %s\n", v)
+		}
+		if v, err := r.GetMethods(); err == nil {
+			fmt.Fprintf(w, "\tmethods: %s\n", v)
+		}
+		if v, err := r.GetPathTemplate(); err == nil {
+			fmt.Fprintf(w, "\tpathT: %s\n", v)
+		}
+		if v, err := r.GetPathRegexp(); err == nil {
+			fmt.Fprintf(w, "\tpathR: %s\n", v)
+		}
+		if v, err := r.GetQueriesTemplates(); err == nil {
+			fmt.Fprintf(w, "\tqueryT: %s\n", v)
+		}
+		if v, err := r.GetQueriesRegexp(); err == nil {
+			fmt.Fprintf(w, "\tqueryR: %s\n", v)
+		}
+		fmt.Fprintf(w, "\thandler: %v\n", reflect.ValueOf(r.GetHandler()).String())
+		return nil
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		c.Logger().Error(err)
+	}
 }
 
 type httpWrapper struct {
