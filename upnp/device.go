@@ -1,14 +1,12 @@
 package upnp
 
 import (
-	"bytes"
 	"encoding/xml"
 	"log"
 	"net/http"
 	"net/url"
 	"strconv"
 	"sync"
-	"time"
 
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/soap"
@@ -23,7 +21,7 @@ const (
 )
 
 type Device interface {
-	AddIcon(width, height, depth int, mimeType string, content []byte)
+	AddIcon(Icon)
 	AddService(*Service)
 
 	DDDLocation() *url.URL
@@ -58,7 +56,7 @@ type DeviceSpec struct {
 
 type device struct {
 	DeviceSpec
-	Icons    []*iconDesc    `xml:"iconList>icon"`
+	Icons    []Icon         `xml:"iconList>icon"`
 	Services []*serviceDesc `xml:"serviceList>service"`
 
 	router *mux.Router
@@ -67,14 +65,12 @@ type device struct {
 	sync.Mutex
 }
 
-type iconDesc struct {
+type Icon struct {
 	Mimetype string `xml:"mimetype"`
 	URL      string `xml:"url"`
 	Width    int    `xml:"width"`
 	Height   int    `xml:"height"`
 	Depth    int    `xml:"depth"`
-
-	content []byte
 }
 
 type serviceDesc struct {
@@ -121,31 +117,11 @@ func NewDevice(spec DeviceSpec, router *mux.Router, logger logging.Logger) Devic
 		HandlerFunc(dev.describeService).
 		GetError())
 
-	must(router.Methods("GET").
-		Path("/icons/{icon:[0-9]+}").
-		Name(IconRoute).
-		HandlerFunc(dev.serveIcon).
-		GetError())
-
 	return dev
 }
 
-func (d *device) AddIcon(width, height, depth int, mimeType string, content []byte) {
-	idx := len(d.Icons)
-	desc := &iconDesc{
-		Mimetype: mimeType,
-		Width:    width,
-		Height:   height,
-		Depth:    depth,
-		content:  content,
-	}
-	d.Icons = append(d.Icons, desc)
-
-	if url, err := d.router.Get(IconRoute).URLPath("icon", strconv.Itoa(idx)); err == nil {
-		desc.URL = url.String()
-	} else {
-		d.logger.Warnf("cannot build icon URL: %s", err)
-	}
+func (d *device) AddIcon(icon Icon) {
+	d.Icons = append(d.Icons, icon)
 }
 
 func (d *device) AddService(s *Service) {
@@ -224,16 +200,4 @@ func (d *device) describeService(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		d.logger.Warnf(err.Error())
 	}
-}
-
-func (d *device) serveIcon(w http.ResponseWriter, r *http.Request) {
-	iconVar := mux.Vars(r)["icon"]
-	idx, err := strconv.Atoi(iconVar)
-	if err != nil {
-		http.Error(w, "Unknown icon", http.StatusNotFound)
-	}
-	icon := d.Icons[idx]
-
-	w.Header().Set("Content-Type", icon.Mimetype)
-	http.ServeContent(w, r, iconVar, time.Now(), bytes.NewReader(icon.content))
 }

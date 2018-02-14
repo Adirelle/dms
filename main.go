@@ -1,14 +1,8 @@
 package main
 
-//go:generate go-bindata data/
-
 import (
 	"context"
 	"net/http"
-
-	"github.com/anacrolix/dms/content_directory"
-
-	"github.com/satori/go.uuid"
 
 	"encoding/json"
 	"flag"
@@ -24,11 +18,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anacrolix/dms/assets"
+	"github.com/anacrolix/dms/content_directory"
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/gorilla/mux"
+	"github.com/satori/go.uuid"
 	"gopkg.in/thejerf/suture.v2"
 )
 
@@ -181,8 +178,12 @@ func (c *Container) Logger() logging.Logger {
 
 func (c *Container) HTTPService() suture.Service {
 	if c.http == nil {
+		router := c.Router()
+
+		router.Methods("GET").PathPrefix("/icons/").Handler(http.FileServer(assets.FileSystem))
+
 		c.http = &httpWrapper{
-			http.Server{Addr: c.HTTP.String(), Handler: c.Router()},
+			http.Server{Addr: c.HTTP.String(), Handler: router},
 			c.Logger().Named("http"),
 		}
 	}
@@ -241,8 +242,8 @@ func (c *Container) UPNP() upnp.Device {
 			c.Logger().Named("upnp"),
 		)
 		c.upnp.AddService(c.ContentDirectory().UPNPService())
-		c.upnp.AddIcon(48, 48, 32, "image/png", MustAsset("data/VGC Sonic.png"))
-		c.upnp.AddIcon(128, 128, 32, "image/png", MustAsset("data/VGC Sonic 128.png"))
+		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/md.png", 48, 48, 32})
+		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/lg.png", 128, 128, 32})
 	}
 	return c.upnp
 }
