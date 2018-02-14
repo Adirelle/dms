@@ -23,6 +23,7 @@ import (
 	"github.com/anacrolix/dms/content_directory"
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
+	"github.com/anacrolix/dms/rest"
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/gorilla/mux"
@@ -185,6 +186,11 @@ func (c *Container) HTTPService() suture.Service {
 			router.Methods("GET").Path("/debug/router").HandlerFunc(c.debugRouter)
 		}
 		router.Methods("GET").PathPrefix("/icons/").Handler(http.FileServer(assets.FileSystem))
+
+		router.Methods("GET").Path("/").Handler(http.RedirectHandler("/rest/", http.StatusSeeOther))
+		router.Methods("GET").PathPrefix("/rest/").Handler(
+			rest.New("/rest", c.Filesystem(), c.CDBackend(), c.Logger().Named("rest")),
+		)
 
 		c.http = &httpWrapper{
 			http.Server{Addr: c.HTTP.String(), Handler: router},

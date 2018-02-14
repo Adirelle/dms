@@ -143,7 +143,7 @@ func (d *directory) ChildrenCount() int {
 }
 
 func (d *directory) Children() (children []Object, err error) {
-	children = make([]Object, len(d.children))
+	children = make([]Object, 0, len(d.children))
 	for _, name := range d.children {
 		childID := path.Join(d.id, name)
 		if child, err := d.fs.GetObjectByID(childID); err == nil {

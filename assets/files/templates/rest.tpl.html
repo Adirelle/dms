@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm"
+        crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/open-iconic/1.1.1/font/css/open-iconic.min.css" />
+    <title>{{ .model.Object.Title }} - DMS</title>
+    {{- $base := .pathPrefix }}
+</head>
+
+<body>
+    <div class="container">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary sticky-top">
+            <ul class="navbar-nav mr-auto">
+                {{- with .model.Object.ParentID }}{{ if ne . "-1" }}
+                <a class="nav-link" href="{{$base}}{{.}}">
+                    <span class="oi" data-glyph="chevron-left" title="back" aria-hidden="true"></span>
+                </a>
+                {{- end }}{{ end }}
+                <li>
+                    <a class="navbar-brand" href="#">{{.model.Object.Title}}</a>
+                </li>
+            </ul>
+            <a class="navbar-brand d-none d-md-inline" href="https://github.com/anacrolix/dms">DMS</a>
+        </nav>
+        <table class="table table-striped table-sm">
+            <tbody>
+                {{- with .model.Children }} {{- range . }}
+                <tr>
+                    <td>
+                        <a href="{{$base}}{{.ID}}">
+                            {{- if eq .Class "object.container" -}}
+                            <span class="oi" data-glyph="folder" aria-hidden="true"></span>&nbsp; {{- else -}}
+                            <span class="oi" data-glyph="file" aria-hidden="true"></span>&nbsp; {{- end -}} {{.Title}}
+                        </a>
+                    </td>
+                </tr>
+                {{- end }} {{- end }}
+            </tbody>
+        </table>
+    </div>
+</body>
+
+</html>
