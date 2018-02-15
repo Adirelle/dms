@@ -1,6 +1,7 @@
 package main
 
 //go:generate bash ./versionInfo.sh version.go
+//go:generate go generate assets/fs.go
 
 import (
 	"context"
