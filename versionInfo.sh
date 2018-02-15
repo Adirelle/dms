@@ -3,8 +3,6 @@
 cat >$1 <<EOF
 package main
 
-//go:generate bash $0 $1
-
 const (
     CommitBranch = "$(git symbolic-ref --short HEAD)"
     CommitRef = "$(git describe --tags)"

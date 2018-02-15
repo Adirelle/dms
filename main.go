@@ -1,5 +1,7 @@
 package main
 
+//go:generate bash ./versionInfo.sh version.go
+
 import (
 	"context"
 	"net/http"
