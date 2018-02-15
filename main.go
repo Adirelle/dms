@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/assets"
-	"github.com/anacrolix/dms/content_directory"
+	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/rest"
@@ -151,14 +151,14 @@ type Container struct {
 
 	router    *mux.Router
 	upnp      upnp.Device
-	fs        filesystem.Filesystem
+	fs        *filesystem.Filesystem
 	logger    logging.Logger
 	udn       string
 	ssdp      suture.Service
 	http      suture.Service
 	spv       *suture.Supervisor
-	cd        *content_directory.Service
-	cdBackend content_directory.Backend
+	cds       *cds.Service
+	directory cds.ContentDirectory
 }
 
 func (c *Container) Supervisor() *suture.Supervisor {
@@ -189,7 +189,7 @@ func (c *Container) HTTPService() suture.Service {
 
 		router.Methods("GET").Path("/").Handler(http.RedirectHandler("/rest/", http.StatusSeeOther))
 		router.Methods("GET").PathPrefix("/rest/").Handler(
-			rest.New("/rest", c.Filesystem(), c.CDBackend(), c.Logger().Named("rest")),
+			rest.New("/rest", c.ContentDirectory(), c.Logger().Named("rest")),
 		)
 
 		c.http = &httpWrapper{
@@ -251,7 +251,7 @@ func (c *Container) UPNP() upnp.Device {
 			c.Router(),
 			c.Logger().Named("upnp"),
 		)
-		c.upnp.AddService(c.ContentDirectory().UPNPService())
+		c.upnp.AddService(c.CDS().UPNPService())
 		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/md.png", 48, 48, 32})
 		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/lg.png", 128, 128, 32})
 	}
@@ -265,21 +265,21 @@ func (c *Container) UDN() string {
 	return c.udn
 }
 
-func (c *Container) ContentDirectory() *content_directory.Service {
-	if c.cd == nil {
-		c.cd = content_directory.NewService(c.CDBackend(), c.Filesystem(), c.Logger().Named("cd"))
+func (c *Container) CDS() *cds.Service {
+	if c.cds == nil {
+		c.cds = cds.NewService(c.ContentDirectory(), c.Logger().Named("cds"))
 	}
-	return c.cd
+	return c.cds
 }
 
-func (c *Container) CDBackend() content_directory.Backend {
-	if c.cdBackend == nil {
-		c.cdBackend = content_directory.NewSimpleBackend(c.Logger().Named("cd-backend"))
+func (c *Container) ContentDirectory() cds.ContentDirectory {
+	if c.directory == nil {
+		c.directory = cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger().Named("directory"))
 	}
-	return c.cdBackend
-}
+	return c.directory
 
-func (c *Container) Filesystem() filesystem.Filesystem {
+}
+func (c *Container) Filesystem() *filesystem.Filesystem {
 	if c.fs == nil {
 		var err error
 		c.fs, err = filesystem.New(c.Config.Config)

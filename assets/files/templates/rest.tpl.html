@@ -31,7 +31,7 @@
                 <tr>
                     <td>
                         <a href="{{$base}}{{.ID}}">
-                            {{- if eq .Class "object.container" -}}
+                            {{- if .IsDir -}}
                             <span class="oi" data-glyph="folder" aria-hidden="true"></span>&nbsp; {{- else -}}
                             <span class="oi" data-glyph="file" aria-hidden="true"></span>&nbsp; {{- end -}} {{.Title}}
                         </a>

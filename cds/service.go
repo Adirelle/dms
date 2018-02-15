@@ -1,4 +1,4 @@
-package content_directory
+package cds
 
 import (
 	"bytes"
@@ -22,20 +22,18 @@ const (
 
 // Service implements the Content Directory Service
 type Service struct {
-	backend Backend
-	fs      filesystem.Filesystem
+	directory ContentDirectory
 
-	upnp   *upnp.Service
-	logger logging.Logger
+	upnp *upnp.Service
+	l    logging.Logger
 }
 
 // New initializes a content-directory service
-func NewService(backend Backend, fs filesystem.Filesystem, logger logging.Logger) *Service {
+func NewService(directory ContentDirectory, logger logging.Logger) *Service {
 	s := &Service{
-		backend: backend,
-		fs:      fs,
-		upnp:    upnp.NewService(ServiceID, ServiceType, logger),
-		logger:  logger,
+		directory: directory,
+		upnp:      upnp.NewService(ServiceID, ServiceType, logger),
+		l:         logger,
 	}
 
 	s.upnp.AddActionFunc("Browse", s.Browse)
@@ -51,9 +49,9 @@ func (s *Service) UPNPService() *upnp.Service {
 }
 
 func (s *Service) updateID() uint32 {
-	root, err := s.fs.GetRootObject()
+	root, err := s.directory.Get(filesystem.RootID)
 	if err != nil {
-		s.logger.Panicf("could not fetch content-directory root: %s", err.Error())
+		s.l.Panicf("could not fetch content-directory root: %s", err.Error())
 	}
 	return uint32(root.ModTime().Unix() & 0x7fff)
 }
@@ -110,16 +108,27 @@ type browseReply struct {
 }
 
 func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err error) {
-	obj, err := s.fs.GetObjectByID(q.ObjectID)
-	if err != nil {
-		return
+	if q.ObjectID == "0" {
+		q.ObjectID = filesystem.RootID
 	}
-	var objs []Object
+	var objs []*Object
 	switch q.BrowseFlag {
-	case "BrowseDirectChildren":
-		objs, rep.TotalMatches, err = s.browseDirectChildren(obj, q.StartingIndex, q.RequestedCount)
 	case "BrowseMetadata":
-		objs, rep.TotalMatches, err = s.browseMetadata(obj)
+		obj, err := s.directory.Get(q.ObjectID)
+		if err == nil {
+			rep.TotalMatches = 1
+			objs = []*Object{obj}
+		}
+	case "BrowseDirectChildren":
+		objs, err = s.directory.GetChildren(q.ObjectID)
+		if err == nil {
+			rep.TotalMatches = uint32(len(objs))
+			stoppingIndex := q.StartingIndex + q.RequestedCount
+			if q.RequestedCount == 0 || stoppingIndex > rep.TotalMatches {
+				stoppingIndex = rep.TotalMatches - q.StartingIndex
+			}
+			objs = objs[q.StartingIndex:stoppingIndex]
+		}
 	default:
 		err = upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
 	}
@@ -133,7 +142,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err
 	return
 }
 
-func didlLite(objs []Object) ([]byte, error) {
+func didlLite(objs []*Object) ([]byte, error) {
 	b := bytes.Buffer{}
 	_, err := b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
 	if err == nil {
@@ -143,36 +152,4 @@ func didlLite(objs []Object) ([]byte, error) {
 		}
 	}
 	return b.Bytes(), err
-}
-
-func (s *Service) browseDirectChildren(dir filesystem.Object, i uint32, n uint32) (objs []Object, total uint32, err error) {
-	if !dir.IsDir() {
-		return
-	}
-	children, err := dir.(filesystem.Directory).Children()
-	if err != nil {
-		return
-	}
-	total = uint32(len(children))
-	if i > total {
-		i = total
-	}
-	j := i + n
-	if n == 0 || j > total {
-		j = total
-	}
-	objs = make([]Object, 0, j-i)
-	for ; i < j; i++ {
-		if obj, err := s.backend.Get(children[i]); err == nil {
-			objs = append(objs, obj)
-		} else {
-			s.logger.Warn(err)
-		}
-	}
-	return
-}
-
-func (s *Service) browseMetadata(obj filesystem.Object) (objs []Object, total uint32, err error) {
-	cdObj, err := s.backend.Get(obj)
-	return []Object{cdObj}, 1, err
 }
