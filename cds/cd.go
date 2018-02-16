@@ -13,8 +13,7 @@ const RootID = filesystem.RootID
 
 // ContentDirectory is the generic ContentDirectory interface (no s**t, sherlock !).
 type ContentDirectory interface {
-	Get(objId string) (*Object, error)
-	GetChildren(objId string) ([]*Object, error)
+	Get(id string) (*Object, error)
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
@@ -34,25 +33,25 @@ func NewFilesystemContentDirectory(fs *filesystem.Filesystem, logger logging.Log
 	return &FilesystemContentDirectory{fs: fs, l: logger}
 }
 
-func (b *FilesystemContentDirectory) Get(objId string) (obj *Object, err error) {
-	fsObj, err := b.fs.Get(objId)
+func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
+	fsObj, err := d.fs.Get(id)
 	if err == nil {
 		obj = newObject(fsObj)
 	}
 	return
 }
 
-func (b *FilesystemContentDirectory) GetChildren(objId string) (children []*Object, err error) {
-	fsObj, err := b.fs.Get(objId)
+func GetChildren(d ContentDirectory, id string) (children []*Object, err error) {
+	obj, err := d.Get(id)
 	if err != nil {
 		return
 	}
-	children = make([]*Object, 0, len(fsObj.ChildrenID))
-	for _, id := range fsObj.ChildrenID {
-		if child, err := b.Get(id); err == nil {
+	children = make([]*Object, 0, len(obj.ChildrenID))
+	for _, id := range obj.ChildrenID {
+		if child, err := d.Get(id); err == nil {
 			children = append(children, child)
 		} else {
-			b.l.Warn(err)
+			return nil, err
 		}
 	}
 	return

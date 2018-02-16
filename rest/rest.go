@@ -55,7 +55,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getResponse(id string) (data response, err error) {
 	data.Object, err = s.Directory.Get(id)
 	if err == nil {
-		data.Children, err = s.Directory.GetChildren(id)
+		data.Children, err = cds.GetChildren(s.Directory, id)
 	}
 	return
 }

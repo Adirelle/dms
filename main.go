@@ -29,6 +29,7 @@ import (
 	"github.com/anacrolix/dms/rest"
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/upnp"
+	"github.com/bluele/gcache"
 	"github.com/gorilla/mux"
 	"github.com/satori/go.uuid"
 	"gopkg.in/thejerf/suture.v2"
@@ -277,7 +278,12 @@ func (c *Container) CDS() *cds.Service {
 
 func (c *Container) ContentDirectory() cds.ContentDirectory {
 	if c.directory == nil {
-		c.directory = cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger().Named("directory"))
+		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger().Named("directory"))
+		c.directory = cds.NewCache(
+			base,
+			gcache.New(1000).ARC().Expiration(time.Minute),
+			c.Logger().Named("cache"),
+		)
 	}
 	return c.directory
 

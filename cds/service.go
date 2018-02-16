@@ -120,7 +120,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err
 			objs = []*Object{obj}
 		}
 	case "BrowseDirectChildren":
-		objs, err = s.directory.GetChildren(q.ObjectID)
+		objs, err = GetChildren(s.directory, q.ObjectID)
 		if err == nil {
 			rep.TotalMatches = uint32(len(objs))
 			stoppingIndex := q.StartingIndex + q.RequestedCount
