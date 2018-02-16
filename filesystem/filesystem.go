@@ -7,7 +7,11 @@ import (
 	"path/filepath"
 )
 
+// RootID is the object identifier of the root of the filesystem
 const RootID = "/"
+
+// NullID represents the null value of object identifiers
+const NullID = "-1"
 
 // Config holds the configuration parameters
 type Config struct {
@@ -26,13 +30,12 @@ type Filesystem struct {
 
 // Object is an abstraction for a file or directory of the content directory
 type Object struct {
-	ID         string   `xml:"id,attr"`
-	ParentID   string   `xml:"parentID,attr"`
-	ChildCount int      `xml:"childCount,attr"`
-	FilePath   string   `xml:"-"`
-	IsRoot     bool     `xml:"-"`
-	ChildrenID []string `xml:"-"`
+	ID       string `xml:"id,attr"`
+	ParentID string `xml:"parentID,attr"`
+	FilePath string `xml:"-"`
 	os.FileInfo
+
+	childrenID []string
 }
 
 // New creates a new Filesystem based on the passed configuration
@@ -60,18 +63,29 @@ func (fs *Filesystem) Get(id string) (ret *Object, err error) {
 	}
 	ret = &Object{
 		ID:       id,
-		IsRoot:   id == RootID,
-		ParentID: "-1",
 		FilePath: fp,
 		FileInfo: fi,
 	}
-	if fi.IsDir() {
-		err = ret.readChildren()
+	if ret.IsRoot() {
+		ret.ParentID = NullID
+	} else {
+		ret.ParentID = path.Dir(id)
 	}
 	return
 }
 
-func (o *Object) readChildren() (err error) {
+func (o *Object) IsRoot() bool {
+	return o.ID == RootID
+}
+
+func (o *Object) GetChildrenID() (ids []string, err error) {
+	if !o.IsDir() {
+		return
+	}
+	ids = o.childrenID
+	if ids != nil {
+		return
+	}
 	fh, err := os.Open(o.FilePath)
 	if err != nil {
 		return
@@ -80,12 +94,11 @@ func (o *Object) readChildren() (err error) {
 	if err != nil {
 		return
 	}
-	o.ChildCount = len(names)
-	o.ChildrenID = make([]string, o.ChildCount)
+	o.childrenID = make([]string, len(names))
 	for i, name := range names {
-		o.ChildrenID[i] = path.Join(o.ID, name)
+		o.childrenID[i] = path.Join(o.ID, name)
 	}
-	return
+	return o.childrenID, nil
 }
 
 func tryToOpenPath(path string) (readable bool, err error) {

@@ -46,8 +46,13 @@ func GetChildren(d ContentDirectory, id string) (children []*Object, err error) 
 	if err != nil {
 		return
 	}
-	children = make([]*Object, 0, len(obj.ChildrenID))
-	for _, id := range obj.ChildrenID {
+	childrenIDs, err := obj.GetChildrenID()
+	if err != nil {
+		return
+	}
+	children = make([]*Object, 0, len(childrenIDs))
+	for _, id := range childrenIDs {
+		// TODO: fetch the children asynchronously
 		if child, err := d.Get(id); err == nil {
 			children = append(children, child)
 		} else {
