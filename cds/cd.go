@@ -46,7 +46,7 @@ func GetChildren(d ContentDirectory, id string) (children []*Object, err error) 
 	if err != nil {
 		return
 	}
-	childrenIDs, err := obj.GetChildrenID()
+	childrenIDs := obj.GetChildrenID()
 	if err != nil {
 		return
 	}
@@ -59,6 +59,7 @@ func GetChildren(d ContentDirectory, id string) (children []*Object, err error) 
 			return nil, err
 		}
 	}
+	sort.Sort(sortableObjectList(children))
 	return
 }
 
@@ -77,3 +78,14 @@ func (pl *processorList) AddProcessor(priority int, p Processor) {
 func (pl processorList) Len() int           { return len(pl) }
 func (pl processorList) Less(i, j int) bool { return pl[i].priority > pl[j].priority }
 func (pl processorList) Swap(i, j int)      { pl[j], pl[i] = pl[i], pl[j] }
+
+type sortableObjectList []*Object
+
+func (l sortableObjectList) Len() int      { return len(l) }
+func (l sortableObjectList) Swap(i, j int) { l[j], l[i] = l[i], l[j] }
+func (l sortableObjectList) Less(i, j int) bool {
+	if l[i].IsDir() != l[j].IsDir() {
+		return l[i].IsDir()
+	}
+	return l[i].Name() < l[j].Name()
+}
