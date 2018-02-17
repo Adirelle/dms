@@ -55,7 +55,7 @@
                         <a href="{{$base}}{{.ID}}">{{- template "Title" . -}}</a>
                     </td>
                     <td class="text-right">{{if not .IsContainer }}{{.Size}}{{ end }}</td>
-                    <td class="text-right">{{.ModTime}}</td>
+                    <td class="text-right">{{.ModTime.Format "2006-02-01 15:04 MST"}}</td>
                 </tr>
                 {{- end }} {{- end }}
             </tbody>
