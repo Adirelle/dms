@@ -14,19 +14,12 @@ const RootID = filesystem.RootID
 // ContentDirectory is the generic ContentDirectory interface (no s**t, sherlock !).
 type ContentDirectory interface {
 	Get(id string) (*Object, error)
-	AddProcessor(priority int, p Processor)
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
 type FilesystemContentDirectory struct {
 	fs *filesystem.Filesystem
 	l  logging.Logger
-	processorList
-}
-
-// Processor adds information to Object
-type Processor interface {
-	Process(*Object) error
 }
 
 // NewFilesystemContentDirectory creates FilesystemContentDirectory
@@ -44,12 +37,6 @@ func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	obj, err = newObject(fsObj)
 	if err != nil {
 		return
-	}
-	for _, proc := range d.processorList {
-		err = proc.Process(obj)
-		if err != nil {
-			break
-		}
 	}
 	return
 }
@@ -75,22 +62,6 @@ func GetChildren(d ContentDirectory, id string) (children []*Object, err error) 
 	sort.Sort(sortableObjectList(children))
 	return
 }
-
-type processor struct {
-	Processor
-	priority int
-}
-
-type processorList []processor
-
-func (pl *processorList) AddProcessor(priority int, p Processor) {
-	*pl = append(*pl, processor{p, priority})
-	sort.Sort(pl)
-}
-
-func (pl processorList) Len() int           { return len(pl) }
-func (pl processorList) Less(i, j int) bool { return pl[i].priority > pl[j].priority }
-func (pl processorList) Swap(i, j int)      { pl[j], pl[i] = pl[i], pl[j] }
 
 type sortableObjectList []*Object
 

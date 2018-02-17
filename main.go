@@ -302,12 +302,13 @@ func (c *Container) ContentDirectory() cds.ContentDirectory {
 	if c.directory == nil {
 		defer c.creating("ContentDirectory")()
 		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger("directory"))
+		processing := &cds.ProcessingDirectory{ContentDirectory: base}
 		c.directory = cds.NewCache(
-			base,
+			processing,
 			gcache.New(1000).ARC(),
 			c.Logger("cache"),
 		)
-		c.SetupProcessors(c.directory)
+		c.SetupProcessors(processing, c.directory)
 	}
 	return c.directory
 }
@@ -324,11 +325,11 @@ func (c *Container) Filesystem() *filesystem.Filesystem {
 	return c.fs
 }
 
-func (c *Container) SetupProcessors(d cds.ContentDirectory) {
+func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.ContentDirectory) {
 	defer c.creating("Processors")()
 
 	d.AddProcessor(0, c.FileServer())
-	d.AddProcessor(10, &processor.AlbumArtProcessor{d, c.FileServer(), c.Logger("album-art")})
+	d.AddProcessor(10, &processor.AlbumArtProcessor{cache, c.FileServer(), c.Logger("album-art")})
 }
 
 func (c *Container) FileServer() *cds.FileServer {

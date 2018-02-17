@@ -26,10 +26,6 @@ func NewCache(directory ContentDirectory, cbuilder *gcache.CacheBuilder, logger 
 	return c
 }
 
-func (c *Cache) AddProcessor(priority int, p Processor) {
-	c.directory.AddProcessor(priority, p)
-}
-
 func (c *Cache) Get(id string) (obj *Object, err error) {
 	val, err := c.cache.Get(id)
 	if err != nil {
