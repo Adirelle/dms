@@ -57,7 +57,9 @@ func (s *Service) updateID() uint32 {
 	return uint32(root.ModTime().Unix() & 0x7fff)
 }
 
-type empty struct{}
+type empty struct {
+	XMLName xml.Name
+}
 
 type systemUpdateIDResponse struct {
 	XMLName xml.Name `xml:"u:GetSystemUpdateIDResponse"`
@@ -65,8 +67,8 @@ type systemUpdateIDResponse struct {
 	ID      uint32   `xml:"Id" statevar:"SystemUpdateID"`
 }
 
-func (s *Service) GetSystemUpdateID(empty, *http.Request) (systemUpdateIDResponse, error) {
-	return systemUpdateIDResponse{XMLNS: ServiceType, ID: s.updateID()}, nil
+func (s *Service) GetSystemUpdateID(q empty, _ *http.Request) (systemUpdateIDResponse, error) {
+	return systemUpdateIDResponse{XMLNS: q.XMLName.Space, ID: s.updateID()}, nil
 }
 
 type getSortCapabilitiesResponse struct {
@@ -75,8 +77,8 @@ type getSortCapabilitiesResponse struct {
 	SortCaps string   `statevar:"SortCapabilities"`
 }
 
-func (s *Service) GetSortCapabilities(empty, *http.Request) (getSortCapabilitiesResponse, error) {
-	return getSortCapabilitiesResponse{XMLNS: ServiceType, SortCaps: "dc:title"}, nil
+func (s *Service) GetSortCapabilities(q empty, _ *http.Request) (getSortCapabilitiesResponse, error) {
+	return getSortCapabilitiesResponse{XMLNS: q.XMLName.Space, SortCaps: "dc:title"}, nil
 }
 
 type getSearchCapabilitiesResponse struct {
@@ -85,18 +87,18 @@ type getSearchCapabilitiesResponse struct {
 	SearchCaps string   `statevar:"SearchCapabilities"`
 }
 
-func (s *Service) GetSearchCapabilities(empty, *http.Request) (getSearchCapabilitiesResponse, error) {
-	return getSearchCapabilitiesResponse{XMLNS: ServiceType, SearchCaps: ""}, nil
+func (s *Service) GetSearchCapabilities(q empty, _ *http.Request) (getSearchCapabilitiesResponse, error) {
+	return getSearchCapabilitiesResponse{XMLNS: q.XMLName.Space, SearchCaps: ""}, nil
 }
 
 type browseQuery struct {
-	XMLName        xml.Name `xml:"urn:schemas-upnp-org:service:ContentDirectory:1 Browse"`
-	ObjectID       string   `statevar:"A_ARG_TYPE_ObjectID"`
-	BrowseFlag     string   `statevar:"A_ARG_TYPE_BrowseFlag,string,BrowseMetadata,BrowseDirectChildren"`
-	Filter         string   `statevar:"A_ARG_TYPE_Filter"`
-	StartingIndex  uint32   `statevar:"A_ARG_TYPE_Index"`
-	RequestedCount uint32   `statevar:"A_ARG_TYPE_Count"`
-	SortCriteria   string   `statevar:"A_ARG_TYPE_SortCriteria"`
+	XMLName        xml.Name
+	ObjectID       string `statevar:"A_ARG_TYPE_ObjectID"`
+	BrowseFlag     string `statevar:"A_ARG_TYPE_BrowseFlag,string,BrowseMetadata,BrowseDirectChildren"`
+	Filter         string `statevar:"A_ARG_TYPE_Filter"`
+	StartingIndex  uint32 `statevar:"A_ARG_TYPE_Index"`
+	RequestedCount uint32 `statevar:"A_ARG_TYPE_Count"`
+	SortCriteria   string `statevar:"A_ARG_TYPE_SortCriteria"`
 }
 
 type browseReply struct {
@@ -118,8 +120,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err e
 	if err != nil {
 		return
 	}
-	r.XMLName.Space = q.XMLName.Space
-	r.XMLNS = ServiceType
+	r.XMLNS = q.XMLName.Space
 	r.UpdateID = s.updateID()
 	r.NumberReturned = uint32(len(r.Result))
 	return
@@ -181,13 +182,13 @@ func (d *DIDLLite) Append(obj *Object) {
 	*d = append(*d, obj)
 }
 
-func (d *DIDLLite) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error) {
+func (d DIDLLite) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error) {
 	b := bytes.Buffer{}
 	_, err = b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
 	if err != nil {
 		return
 	}
-	err = xml.NewEncoder(&b).Encode(d)
+	err = xml.NewEncoder(&b).Encode([]*Object(d))
 	if err != nil {
 		return
 	}
@@ -195,5 +196,5 @@ func (d *DIDLLite) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error
 	if err != nil {
 		return
 	}
-	return e.EncodeElement(xml.CharData(b.Bytes()), start)
+	return e.EncodeElement(b.Bytes(), start)
 }
