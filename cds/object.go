@@ -20,16 +20,6 @@ type Object struct {
 	mimeType types.MIME
 }
 
-type Resource struct {
-	XMLName      xml.Name `xml:"res"`
-	ProtocolInfo string   `xml:"protocolInfo,attr"`
-	URL          string   `xml:",chardata"`
-	Size         uint64   `xml:"size,attr,omitempty"`
-	Bitrate      uint     `xml:"bitrate,attr,omitempty"`
-	Duration     string   `xml:"duration,attr,omitempty"`
-	Resolution   string   `xml:"resolution,attr,omitempty"`
-}
-
 func newObject(obj *filesystem.Object) (o *Object, err error) {
 	o = &Object{
 		Object:     *obj,
@@ -63,8 +53,11 @@ func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string
 	return
 }
 
-func (o *Object) AddResource(res ...Resource) {
-	o.Res = append(o.Res, res...)
+func (o *Object) AddResource(rs ...Resource) {
+	for _, r := range rs {
+		r.object = o
+	}
+	o.Res = append(o.Res, rs...)
 }
 
 func (o *Object) IsContainer() bool {
@@ -73,4 +66,21 @@ func (o *Object) IsContainer() bool {
 
 func (o *Object) MimeType() types.MIME {
 	return o.mimeType
+}
+
+type Resource struct {
+	XMLName      xml.Name   `xml:"res"`
+	ProtocolInfo string     `xml:"protocolInfo,attr"`
+	URL          string     `xml:",chardata"`
+	Size         uint64     `xml:"size,attr,omitempty"`
+	Bitrate      uint       `xml:"bitrate,attr,omitempty"`
+	Duration     string     `xml:"duration,attr,omitempty"`
+	Resolution   string     `xml:"resolution,attr,omitempty"`
+	MimeType     types.MIME `xml:"-"`
+
+	object *Object
+}
+
+func (r *Resource) Object() *Object {
+	return r.object
 }
