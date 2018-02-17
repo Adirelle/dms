@@ -26,6 +26,7 @@ import (
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
+	"github.com/anacrolix/dms/processor"
 	"github.com/anacrolix/dms/rest"
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/upnp"
@@ -62,13 +63,13 @@ func main() {
 
 	spv := ctn.Supervisor()
 
-	ctn.Logger().Infof("DMS #%s, build on %s", CommitRef, BuildDate)
+	ctn.Logger("main").Infof("DMS #%s, build on %s", CommitRef, BuildDate)
 
 	spv.ServeBackground()
 
 	defer func() {
 		spv.Stop()
-		ctn.Logger().Sync()
+		ctn.logger.Sync()
 	}()
 
 	sigs := make(chan os.Signal, 1)
@@ -164,11 +165,14 @@ type Container struct {
 	cds        *cds.Service
 	directory  cds.ContentDirectory
 	fileserver *cds.FileServer
+
+	indent string
 }
 
 func (c *Container) Supervisor() *suture.Supervisor {
 	if c.spv == nil {
-		logger := c.Logger().Named("supervisor")
+		defer c.creating("Supervisor")()
+		logger := c.Logger("supervisor")
 		c.spv = suture.New("dms", suture.Spec{Log: func(m string) { logger.Warn(m) }})
 		c.spv.Add(c.HTTPService())
 		c.spv.Add(c.SSDPService())
@@ -176,55 +180,59 @@ func (c *Container) Supervisor() *suture.Supervisor {
 	return c.spv
 }
 
-func (c *Container) Logger() logging.Logger {
+func (c *Container) Logger(name string) logging.Logger {
 	if c.logger == nil {
 		c.logger = logging.New(c.Logging)
 	}
-	return c.logger
+	return c.logger.Named(name)
 }
 
 func (c *Container) HTTPService() suture.Service {
 	if c.http == nil {
-		router := c.Router()
-
-		if c.Logging.Debug {
-			router.Methods("GET").Path("/debug/router").HandlerFunc(c.debugRouter)
-		}
-		router.Methods("GET").PathPrefix("/icons/").Handler(http.FileServer(assets.FileSystem))
-
-		router.Methods("GET").Path("/").Handler(http.RedirectHandler("/rest/", http.StatusSeeOther))
-		router.Methods("GET").PathPrefix("/rest/").Handler(
-			rest.New("/rest", c.ContentDirectory(), c.Logger().Named("rest")),
-		)
-
-		c.http = &httpWrapper{
-			http.Server{Addr: c.HTTP.String(), Handler: router},
-			c.Logger().Named("http"),
-		}
+		defer c.creating("HTTP Service")()
+		c.http = &httpService{http.Server{Addr: c.HTTP.String(), Handler: c.Router()}, c.Logger("http")}
 	}
 	return c.http
 }
 
 func (c *Container) Router() *mux.Router {
 	if c.router == nil {
+		defer c.creating("Router")()
 		c.router = mux.NewRouter()
+		c.SetupRouting(c.router)
+		c.SetupMiddlewares(c.router)
 	}
 	return c.router
 }
 
-func (c *Container) FileServer() *cds.FileServer {
-	if c.fileserver == nil {
-		c.fileserver = cds.NewFileServer(
-			c.ContentDirectory(),
-			c.Router(),
-			c.Logger().Named("fileserver"),
-		)
+func (c *Container) SetupRouting(r *mux.Router) {
+	defer c.creating("Routing")()
+
+	if c.Logging.Debug {
+		r.Methods("GET").Path("/debug/router").
+			HandlerFunc(c.debugRouter)
 	}
-	return c.fileserver
+
+	r.Methods("GET", "HEAD").PathPrefix("/icons/").
+		Handler(http.FileServer(assets.FileSystem))
+
+	r.Methods("GET").PathPrefix("/rest/").
+		Handler(rest.New("/rest", c.ContentDirectory(), c.Logger("rest")))
+
+	r.Methods("GET", "HEAD").PathPrefix("/files/").
+		Handler(c.FileServer())
+
+	r.Methods("GET", "HEAD").Path("/").
+		Handler(http.RedirectHandler("/rest/", http.StatusSeeOther))
+}
+
+func (c *Container) SetupMiddlewares(_ *mux.Router) {
+	defer c.creating("Middleware")()
 }
 
 func (c *Container) SSDPService() suture.Service {
 	if c.ssdp == nil {
+		defer c.creating("SSDP Service")()
 		upnp := c.UPNP()
 		c.ssdp = ssdp.New(
 			ssdp.Config{
@@ -243,7 +251,7 @@ func (c *Container) SSDPService() suture.Service {
 				BootID:   int32(time.Now().Unix() & 0x3fff), // TODO find the right mask
 				ConfigID: int32(c.CRC32()) & 0x3fff,         // TODO find the right mask
 			},
-			c.Logger().Named("ssdp"),
+			c.Logger("ssdp"),
 		)
 	}
 	return c.ssdp
@@ -251,6 +259,7 @@ func (c *Container) SSDPService() suture.Service {
 
 func (c *Container) UPNP() upnp.Device {
 	if c.upnp == nil {
+		defer c.creating("UPNP Device")()
 		c.upnp = upnp.NewDevice(
 			upnp.DeviceSpec{
 				DeviceType:       DeviceType,
@@ -265,7 +274,7 @@ func (c *Container) UPNP() upnp.Device {
 				UPC:              "000000",
 			},
 			c.Router(),
-			c.Logger().Named("upnp"),
+			c.Logger("upnp-device"),
 		)
 		c.upnp.AddService(c.CDS().UPNPService())
 		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/md.png", 48, 48, 32})
@@ -283,33 +292,51 @@ func (c *Container) UDN() string {
 
 func (c *Container) CDS() *cds.Service {
 	if c.cds == nil {
-		c.cds = cds.NewService(c.ContentDirectory(), c.Logger().Named("cds"))
+		defer c.creating("ContentDirectoryService")()
+		c.cds = cds.NewService(c.ContentDirectory(), c.Logger("cds"))
 	}
 	return c.cds
 }
 
 func (c *Container) ContentDirectory() cds.ContentDirectory {
 	if c.directory == nil {
-		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger().Named("directory"))
+		defer c.creating("ContentDirectory")()
+		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger("directory"))
 		c.directory = cds.NewCache(
 			base,
-			gcache.New(1000).ARC().Expiration(time.Minute),
-			c.Logger().Named("cache"),
+			gcache.New(1000).ARC(),
+			c.Logger("cache"),
 		)
-		base.AddProcessor(0, c.FileServer())
+		c.SetupProcessors(c.directory)
 	}
 	return c.directory
 }
 
 func (c *Container) Filesystem() *filesystem.Filesystem {
 	if c.fs == nil {
+		defer c.creating("Filesystem")()
 		var err error
 		c.fs, err = filesystem.New(c.Config.Config)
 		if err != nil {
-			c.Logger().Panic(err)
+			c.Logger("container").Panic(err)
 		}
 	}
 	return c.fs
+}
+
+func (c *Container) SetupProcessors(d cds.ContentDirectory) {
+	defer c.creating("Processors")()
+
+	d.AddProcessor(0, c.FileServer())
+	d.AddProcessor(10, &processor.AlbumArtProcessor{d, c.FileServer(), c.Logger("album-art")})
+}
+
+func (c *Container) FileServer() *cds.FileServer {
+	if c.fileserver == nil {
+		defer c.creating("FileServer")()
+		c.fileserver = cds.NewFileServer(c.ContentDirectory(), "/files", c.Logger("fileserver"))
+	}
+	return c.fileserver
 }
 
 func (c *Container) ValidInterfaces() (ret []net.Interface, err error) {
@@ -366,16 +393,28 @@ func (c *Container) debugRouter(w http.ResponseWriter, _ *http.Request) {
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		c.Logger().Error(err)
+		c.Logger("debug-router").Error(err)
 	}
 }
 
-type httpWrapper struct {
+const indent = "│  "
+
+func (c *Container) creating(what string) func() {
+	l := c.Logger("container")
+	l.Debugf("%s├─Creating %s", c.indent, what)
+	c.indent += indent
+	return func() {
+		l.Debugf("%s└─%s created", c.indent, what)
+		c.indent = c.indent[:len(c.indent)-len(indent)]
+	}
+}
+
+type httpService struct {
 	http.Server
 	logging.Logger
 }
 
-func (w *httpWrapper) Serve() {
+func (w *httpService) Serve() {
 	w.Infof("listening on %s", w.Addr)
 	err := w.ListenAndServe()
 	if err != nil && err != http.ErrServerClosed {
@@ -383,7 +422,7 @@ func (w *httpWrapper) Serve() {
 	}
 }
 
-func (w *httpWrapper) Stop() {
+func (w *httpService) Stop() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := w.Shutdown(ctx)
