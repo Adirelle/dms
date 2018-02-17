@@ -2,9 +2,11 @@ package upnp
 
 import (
 	"encoding/xml"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"sync"
 
@@ -143,8 +145,10 @@ func (d *device) AddService(s *Service) {
 
 	desc.EventSubURL = "/sub"
 
-	for name, action := range s.actions {
-		d.soap.RegisterAction(xml.Name{s.urn, name}, action)
+	for _, urn := range expandTypes(s.urn) {
+		for name, action := range s.actions {
+			d.soap.RegisterAction(xml.Name{urn, name}, action)
+		}
 	}
 }
 
@@ -156,14 +160,30 @@ func (d *device) DDDLocation() (res *url.URL) {
 	return
 }
 
+var versionedTypeRe = regexp.MustCompile(`^(urn:schemas-upnp-org:(?:service|device):[^:]+:)(\d+)$`)
+
+func expandTypes(t string) (ts []string) {
+	subs := versionedTypeRe.FindStringSubmatch(t)
+	if subs == nil {
+		return []string{t}
+	}
+	v, err := strconv.Atoi(subs[2])
+	if err != nil {
+		logging.Panicf("cannot convert %q to int: %s", subs[2], err)
+	}
+	for ; v >= 1; v-- {
+		ts = append(ts, fmt.Sprintf("%s%d", subs[1], v))
+	}
+	return
+}
+
 func (d *device) DeviceTypes() []string {
-	return []string{d.DeviceType}
+	return expandTypes(d.DeviceType)
 }
 
 func (d *device) ServiceTypes() (res []string) {
-	res = make([]string, len(d.Services))
-	for i, s := range d.Services {
-		res[i] = s.URN
+	for _, s := range d.Services {
+		res = append(res, expandTypes(s.URN)...)
 	}
 	return
 }
