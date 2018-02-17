@@ -15,6 +15,7 @@ const RootID = filesystem.RootID
 // ContentDirectory is the generic ContentDirectory interface (no s**t, sherlock !).
 type ContentDirectory interface {
 	Get(id string) (*Object, error)
+	AddProcessor(priority int, p Processor)
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
@@ -26,7 +27,7 @@ type FilesystemContentDirectory struct {
 
 // Processor adds information to Object
 type Processor interface {
-	Process(Object) error
+	Process(*Object) error
 }
 
 // NewFilesystemContentDirectory creates FilesystemContentDirectory
@@ -49,6 +50,12 @@ func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	typ, err := filetype.MatchFile(obj.FilePath)
 	if err == nil {
 		obj.mimeType = typ.MIME
+	}
+	for _, proc := range d.processorList {
+		err = proc.Process(obj)
+		if err != nil {
+			break
+		}
 	}
 	return
 }

@@ -153,16 +153,17 @@ func getDefaultFriendlyName() string {
 type Container struct {
 	*Config
 
-	router    *mux.Router
-	upnp      upnp.Device
-	fs        *filesystem.Filesystem
-	logger    logging.Logger
-	udn       string
-	ssdp      suture.Service
-	http      suture.Service
-	spv       *suture.Supervisor
-	cds       *cds.Service
-	directory cds.ContentDirectory
+	router     *mux.Router
+	upnp       upnp.Device
+	fs         *filesystem.Filesystem
+	logger     logging.Logger
+	udn        string
+	ssdp       suture.Service
+	http       suture.Service
+	spv        *suture.Supervisor
+	cds        *cds.Service
+	directory  cds.ContentDirectory
+	fileserver *cds.FileServer
 }
 
 func (c *Container) Supervisor() *suture.Supervisor {
@@ -209,6 +210,17 @@ func (c *Container) Router() *mux.Router {
 		c.router = mux.NewRouter()
 	}
 	return c.router
+}
+
+func (c *Container) FileServer() *cds.FileServer {
+	if c.fileserver == nil {
+		c.fileserver = cds.NewFileServer(
+			c.ContentDirectory(),
+			c.Router(),
+			c.Logger().Named("fileserver"),
+		)
+	}
+	return c.fileserver
 }
 
 func (c *Container) SSDPService() suture.Service {
@@ -284,10 +296,11 @@ func (c *Container) ContentDirectory() cds.ContentDirectory {
 			gcache.New(1000).ARC().Expiration(time.Minute),
 			c.Logger().Named("cache"),
 		)
+		base.AddProcessor(0, c.FileServer())
 	}
 	return c.directory
-
 }
+
 func (c *Container) Filesystem() *filesystem.Filesystem {
 	if c.fs == nil {
 		var err error
