@@ -42,7 +42,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Warn(err.Error())
 	}
 
-	w.Header().Set("Content-Type", "application/soap+xml; charset=UTF-8")
+	w.Header().Set("Content-Type", `application/soap+xml; charset="UTF-8"`)
 	if _, err = w.Write(responseHeader); err == nil {
 		if err = xml.NewEncoder(w).Encode(res); err == nil {
 			_, err = w.Write(responseFooter)
