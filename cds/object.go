@@ -16,6 +16,7 @@ type Object struct {
 	Title      string     `xml:"dc:title"`
 	Class      string     `xml:"upnp:class"`
 	Res        []Resource `xml:"res,omitempty"`
+	Tags       TagBag     `xml:",any,omitempty"`
 
 	mimeType types.MIME
 }
@@ -83,4 +84,31 @@ type Resource struct {
 
 func (r *Resource) Object() *Object {
 	return r.object
+}
+
+type TagBag map[string]string
+
+func (b *TagBag) Set(name, value string) {
+	(*b)[name] = value
+}
+
+func (b *TagBag) Get(name string) (value string, found bool) {
+	value, found = (*b)[name]
+	return
+}
+
+func (b *TagBag) Remove(name string) {
+	delete(*b, name)
+}
+
+func (b *TagBag) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
+	for name, value := range *b {
+		if err := e.EncodeElement(
+			xml.CharData(value),
+			xml.StartElement{Name: xml.Name{Local: name}},
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
