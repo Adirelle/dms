@@ -5,7 +5,6 @@ import (
 
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
-	"github.com/h2non/filetype"
 	types "gopkg.in/h2non/filetype.v1/types"
 )
 
@@ -42,14 +41,9 @@ func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	if err != nil {
 		return
 	}
-	obj = newObject(fsObj)
-	if obj.IsContainer() {
-		obj.mimeType = FolderType
+	obj, err = newObject(fsObj)
+	if err != nil {
 		return
-	}
-	typ, err := filetype.MatchFile(obj.FilePath)
-	if err == nil {
-		obj.mimeType = typ.MIME
 	}
 	for _, proc := range d.processorList {
 		err = proc.Process(obj)

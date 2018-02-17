@@ -2,8 +2,10 @@ package cds
 
 import (
 	"encoding/xml"
+	"strings"
 
 	"github.com/anacrolix/dms/filesystem"
+	"github.com/h2non/filetype"
 	types "gopkg.in/h2non/filetype.v1/types"
 )
 
@@ -28,18 +30,36 @@ type Resource struct {
 	Resolution   string   `xml:"resolution,attr,omitempty"`
 }
 
-func newObject(obj *filesystem.Object) (o *Object) {
+func newObject(obj *filesystem.Object) (o *Object, err error) {
 	o = &Object{
 		Object:     *obj,
 		Restricted: 1,
-		Title:      obj.Name(),
+		Tags:       TagBag(make(map[string]string)),
 	}
-	if o.IsDir() {
+	if o.IsContainer() {
 		o.XMLName.Local = "container"
 	} else {
 		o.XMLName.Local = "item"
 	}
-	o.Class = "object." + o.XMLName.Local
+	o.Title, o.mimeType, o.Class, err = guessMimeType(o)
+	return
+}
+
+func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string, err error) {
+	if obj.IsContainer() {
+		return obj.Name(), FolderType, "object.container", nil
+	}
+	typ, err := filetype.MatchFile(obj.FilePath)
+	if err != nil {
+		return
+	}
+	title = strings.TrimSuffix(obj.Name(), "."+typ.Extension)
+	mimeType = typ.MIME
+	if mimeType.Subtype == "audio" || mimeType.Subtype == "video" || mimeType.Subtype == "image" {
+		class = "object." + mimeType.Subtype + "Item"
+	} else {
+		class = "object.item"
+	}
 	return
 }
 
