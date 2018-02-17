@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 
 	"github.com/anacrolix/dms/filesystem"
+	types "gopkg.in/h2non/filetype.v1/types"
 )
 
 type Object struct {
@@ -13,6 +14,8 @@ type Object struct {
 	Title      string     `xml:"dc:title"`
 	Class      string     `xml:"upnp:class"`
 	Res        []Resource `xml:"res,omitempty"`
+
+	mimeType types.MIME
 }
 
 type Resource struct {
@@ -46,4 +49,8 @@ func (o *Object) AddResource(res ...Resource) {
 
 func (o *Object) IsContainer() bool {
 	return o.IsDir()
+}
+
+func (o *Object) MimeType() types.MIME {
+	return o.mimeType
 }

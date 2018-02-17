@@ -3,9 +3,10 @@ package cds
 import (
 	"sort"
 
-	"github.com/anacrolix/dms/logging"
-
 	"github.com/anacrolix/dms/filesystem"
+	"github.com/anacrolix/dms/logging"
+	"github.com/h2non/filetype"
+	types "gopkg.in/h2non/filetype.v1/types"
 )
 
 // RootID is the identifier of the root of any ContentDirectory
@@ -33,10 +34,21 @@ func NewFilesystemContentDirectory(fs *filesystem.Filesystem, logger logging.Log
 	return &FilesystemContentDirectory{fs: fs, l: logger}
 }
 
+var FolderType = types.NewMIME("application/vnd.container")
+
 func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	fsObj, err := d.fs.Get(id)
+	if err != nil {
+		return
+	}
+	obj = newObject(fsObj)
+	if obj.IsContainer() {
+		obj.mimeType = FolderType
+		return
+	}
+	typ, err := filetype.MatchFile(obj.FilePath)
 	if err == nil {
-		obj = newObject(fsObj)
+		obj.mimeType = typ.MIME
 	}
 	return
 }
