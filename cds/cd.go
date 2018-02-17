@@ -1,7 +1,9 @@
 package cds
 
 import (
+	"context"
 	"sort"
+	"sync"
 
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
@@ -41,26 +43,46 @@ func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	return
 }
 
-func GetChildren(d ContentDirectory, id string) (children []*Object, err error) {
-	obj, err := d.Get(id)
-	if err != nil {
-		return
-	}
-	childrenIDs := obj.GetChildrenID()
-	if err != nil {
-		return
-	}
-	children = make([]*Object, 0, len(childrenIDs))
-	for _, id := range childrenIDs {
-		// TODO: fetch the children asynchronously
-		if child, err := d.Get(id); err == nil {
-			children = append(children, child)
-		} else {
-			return nil, err
+func GetChildren(d ContentDirectory, id string, ctx context.Context) (<-chan *Object, <-chan error) {
+	ch := make(chan *Object)
+	errCh := make(chan error)
+	go func() {
+		defer close(ch)
+		defer close(errCh)
+		obj, err := d.Get(id)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+			case errCh <- err:
+			}
+			return
 		}
-	}
-	sort.Sort(sortableObjectList(children))
-	return
+		childrenIDs := obj.GetChildrenID()
+		group := sync.WaitGroup{}
+		group.Add(len(childrenIDs))
+		for _, id := range childrenIDs {
+			go func(id string) {
+				defer group.Done()
+				if child, err := d.Get(id); err == nil {
+					select {
+					case <-ctx.Done():
+					case ch <- child:
+					}
+				} else {
+					select {
+					case <-ctx.Done():
+					case errCh <- err:
+					}
+				}
+			}(id)
+		}
+		group.Wait()
+	}()
+	return ch, errCh
+}
+
+func SortObjects(objs []*Object) {
+	sort.Sort(sortableObjectList(objs))
 }
 
 type sortableObjectList []*Object

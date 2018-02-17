@@ -30,10 +30,10 @@ type Filesystem struct {
 
 // Object is an abstraction for a file or directory of the content directory
 type Object struct {
-	ID       string `xml:"id,attr"`
-	ParentID string `xml:"parentID,attr"`
-	FilePath string `xml:"-"`
-	os.FileInfo
+	ID          string `xml:"id,attr"`
+	ParentID    string `xml:"parentID,attr"`
+	FilePath    string `xml:"-"`
+	os.FileInfo `xml:"-"`
 
 	childrenID []string
 }

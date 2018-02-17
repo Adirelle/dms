@@ -2,6 +2,7 @@ package cds
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"net/http"
 
@@ -101,55 +102,98 @@ type browseQuery struct {
 type browseReply struct {
 	XMLName        xml.Name `xml:"u:BrowseResponse"`
 	XMLNS          string   `xml:"xmlns:u,attr"`
-	Result         []byte   `statevar:"A_ARG_TYPE_Result,string"`
+	Result         DIDLLite `statevar:"A_ARG_TYPE_Result,string"`
 	NumberReturned uint32   `statevar:"A_ARG_TYPE_Count"`
 	TotalMatches   uint32   `statevar:"A_ARG_TYPE_Count"`
 	UpdateID       uint32   `statevar:"A_ARG_TYPE_UpdateID"`
 }
 
-func (s *Service) Browse(q browseQuery, req *http.Request) (rep browseReply, err error) {
+func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err error) {
 	if q.ObjectID == "0" {
 		q.ObjectID = filesystem.RootID
 	}
-	var objs []*Object
+	ctx, cFunc := context.WithCancel(req.Context())
+	defer cFunc()
+	err = s.doBrowse(&r, q, ctx)
+	if err != nil {
+		return
+	}
+	r.XMLName.Space = q.XMLName.Space
+	r.XMLNS = ServiceType
+	r.UpdateID = s.updateID()
+	r.NumberReturned = uint32(len(r.Result))
+	return
+}
+
+func (s *Service) doBrowse(r *browseReply, q browseQuery, ctx context.Context) error {
 	switch q.BrowseFlag {
 	case "BrowseMetadata":
-		obj, err := s.directory.Get(q.ObjectID)
-		if err == nil {
-			rep.TotalMatches = 1
-			objs = []*Object{obj}
-		}
+		return s.doBrowseMetadata(r, q, ctx)
 	case "BrowseDirectChildren":
-		objs, err = GetChildren(s.directory, q.ObjectID)
-		if err == nil {
-			rep.TotalMatches = uint32(len(objs))
-			stoppingIndex := q.StartingIndex + q.RequestedCount
-			if q.RequestedCount == 0 || stoppingIndex > rep.TotalMatches {
-				stoppingIndex = rep.TotalMatches - q.StartingIndex
-			}
-			objs = objs[q.StartingIndex:stoppingIndex]
-		}
+		return s.doBrowseDirectChildren(r, q, ctx)
 	default:
-		err = upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
+		return upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
+	}
+}
+
+func (s *Service) doBrowseMetadata(r *browseReply, q browseQuery, ctx context.Context) (err error) {
+	obj, err := s.directory.Get(q.ObjectID)
+	if err != nil {
+		return
+	}
+	r.TotalMatches = 1
+	r.Result.Append(obj)
+	return
+}
+
+func (s *Service) doBrowseDirectChildren(r *browseReply, q browseQuery, ctx context.Context) (err error) {
+	objs, errs := GetChildren(s.directory, q.ObjectID, ctx)
+	open := true
+	var obj *Object
+	for open && err == nil {
+		select {
+		case _, open = <-ctx.Done():
+			err = context.Canceled
+		case obj, open = <-objs:
+			if open {
+				r.Result.Append(obj)
+				r.TotalMatches++
+			}
+		case err = <-errs:
+		}
 	}
 	if err != nil {
 		return
 	}
-	rep.XMLNS = ServiceType
-	rep.NumberReturned = uint32(len(objs))
-	rep.UpdateID = s.updateID()
-	rep.Result, err = didlLite(objs)
-	return
+	SortObjects(r.Result)
+	stoppingIndex := q.StartingIndex + q.RequestedCount
+	if q.RequestedCount == 0 || stoppingIndex > r.TotalMatches {
+		stoppingIndex = r.TotalMatches - q.StartingIndex
+	}
+	r.Result = r.Result[q.StartingIndex:stoppingIndex]
+	return nil
 }
 
-func didlLite(objs []*Object) ([]byte, error) {
+// Slice of Objects, that are double-encoded
+type DIDLLite []*Object
+
+func (d *DIDLLite) Append(obj *Object) {
+	*d = append(*d, obj)
+}
+
+func (d *DIDLLite) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error) {
 	b := bytes.Buffer{}
-	_, err := b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
-	if err == nil {
-		err = xml.NewEncoder(&b).Encode(objs)
-		if err == nil {
-			_, err = b.WriteString(`</DIDL-Lite>`)
-		}
+	_, err = b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
+	if err != nil {
+		return
 	}
-	return b.Bytes(), err
+	err = xml.NewEncoder(&b).Encode(d)
+	if err != nil {
+		return
+	}
+	_, err = b.WriteString(`</DIDL-Lite>`)
+	if err != nil {
+		return
+	}
+	return e.EncodeElement(xml.CharData(b.Bytes()), start)
 }

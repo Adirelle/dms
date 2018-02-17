@@ -1,6 +1,7 @@
 package rest
 
 import (
+	"context"
 	"net/http"
 	"os"
 	"strings"
@@ -37,7 +38,9 @@ func New(prefix string, Directory cds.ContentDirectory, logger logging.Logger) *
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	data, err := s.getResponse(strings.TrimPrefix(r.URL.Path, s.Prefix))
+	ctx, cFunc := context.WithCancel(r.Context())
+	defer cFunc()
+	data, err := s.getResponse(strings.TrimPrefix(r.URL.Path, s.Prefix), ctx)
 	if err == nil {
 		err = s.negt.Negotiate(w, r, data)
 	}
@@ -52,10 +55,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) getResponse(id string) (data response, err error) {
+func (s *Server) getResponse(id string, ctx context.Context) (data response, err error) {
 	data.Object, err = s.Directory.Get(id)
-	if err == nil {
-		data.Children, err = cds.GetChildren(s.Directory, id)
+	if err != nil {
+		return
 	}
+	children, errs := cds.GetChildren(s.Directory, id, ctx)
+	open := true
+	var child *cds.Object
+	for open {
+		select {
+		case _, open = <-ctx.Done():
+			err = context.Canceled
+		case child, open = <-children:
+			if open {
+				data.Children = append(data.Children, child)
+			}
+		case err, open = <-errs:
+			if open {
+				s.L.Warn(err)
+				err = nil
+			}
+		}
+	}
+	cds.SortObjects(data.Children)
 	return
 }

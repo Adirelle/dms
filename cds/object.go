@@ -15,8 +15,8 @@ type Object struct {
 	Restricted int        `xml:"restricted,attr"`
 	Title      string     `xml:"dc:title"`
 	Class      string     `xml:"upnp:class"`
-	Res        []Resource `xml:"res,omitempty"`
 	Tags       TagBag     `xml:",any,omitempty"`
+	Res        []Resource `xml:"res,omitempty"`
 
 	mimeType types.MIME
 }
@@ -92,8 +92,12 @@ func (b *TagBag) Set(name, value string) {
 	(*b)[name] = value
 }
 
-func (b *TagBag) Get(name string) (value string, found bool) {
-	value, found = (*b)[name]
+func (b *TagBag) Get(name string) string {
+	return (*b)[name]
+}
+
+func (b *TagBag) Has(name string) (found bool) {
+	_, found = (*b)[name]
 	return
 }
 
