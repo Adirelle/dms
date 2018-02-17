@@ -330,6 +330,7 @@ func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.Conten
 
 	d.AddProcessor(0, c.FileServer())
 	d.AddProcessor(10, &processor.AlbumArtProcessor{cache, c.FileServer(), c.Logger("album-art")})
+	d.AddProcessor(15, &processor.BasicIconProcessor{})
 }
 
 func (c *Container) FileServer() *cds.FileServer {
