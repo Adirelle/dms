@@ -43,8 +43,8 @@ func (a *Advertiser) Serve() {
 		a.notifyAll(byebyeNTS, true)
 		a.w.Done()
 	}()
-	a.l.Info("advertiser started")
 	for {
+		a.l.Info("announcing")
 		go a.notifyAll(aliveNTS, false)
 		select {
 		case <-time.After(a.NotifyInterval):
@@ -57,7 +57,7 @@ func (a *Advertiser) Serve() {
 func (a *Advertiser) Stop() {
 	close(a.done)
 	a.w.Wait()
-	a.l.Info("advertiser stopped ")
+	a.l.Info("stopped")
 }
 
 func (a *Advertiser) notifyAll(nts string, immediate bool) {

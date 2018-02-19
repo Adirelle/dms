@@ -45,7 +45,6 @@ func (r *Responder) Serve() {
 		r.conn.Close()
 		r.Done()
 	}()
-	r.Info("responder starting")
 
 	var err error
 
@@ -77,7 +76,7 @@ func (r *Responder) Stop() {
 	close(r.done)
 	r.conn.Close()
 	r.Wait()
-	r.Info("responder stopped")
+	r.Info("stopped")
 }
 
 func (r *Responder) makeConn() (conn *ipv4.PacketConn, err error) {
@@ -117,7 +116,7 @@ func (r *Responder) handle(sender *net.UDPAddr, req *http.Request) {
 		"url", req.URL.String(),
 	)
 	if req.Method != "M-SEARCH" || req.URL.String() != "*" || req.Header.Get("MAN") != `"ssdp:discover"` {
-		log.Debugw("ignored request")
+		log.Debug("ignored request")
 		return
 	}
 
@@ -174,7 +173,7 @@ func (r *Responder) sendResponse(conn net.Conn, st string, maxDelay time.Duratio
 	if err != nil {
 		log.Warnf("could not send: %s", err.Error())
 	} else {
-		log.Debugf("response sent")
+		log.Debug("response sent")
 	}
 }
 
