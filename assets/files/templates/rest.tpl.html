@@ -1,13 +1,15 @@
 {{- define "IconURI" -}}
-    {{- with (.Tags.Get "upnp:albumArtURI") }}
+    {{- with (.Tags.Get "upnp:albumArtURI") -}}
         {{- . -}}
     {{- else -}}
-        {{- with (.Tags.Get "upnp:icon") -}}{{- . -}}{{- end -}}
+        {{- with (.Tags.Get "upnp:icon") -}}
+            {{- . -}}
+        {{- end -}}
     {{- end -}}
 {{- end -}}
 
 {{- define "Title" -}}
-<img style="max-width:0.9em;max-height:0.9em" src="{{- template "IconURI" . -}}"/>&nbsp;{{.Title}}
+    <img class="icon" src="{{- template "IconURI" . -}}"/>{{.Title}}
 {{- end -}}
 
 <!DOCTYPE html>
@@ -19,6 +21,14 @@
         crossorigin="anonymous">
     <!--<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/open-iconic/1.1.1/font/css/open-iconic.min.css" />-->
     <title>{{ .model.Object.Title }} - DMS</title>
+    <style>
+        img.icon {
+            max-width: 1em;
+            max-height: 1em;
+            vertical-align: baseline;
+            margin: 0 0.5ex;
+        }
+    </style>
     {{- $base := .pathPrefix }}
 </head>
 
