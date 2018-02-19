@@ -1,6 +1,15 @@
-{{- define "Title" -}} {{- with (.Tags.Get "upnp:albumArtURI") }}
-<img style="max-width: 16px; max-height: 16px" src="{{ . }}" /> {{- else -}} {{- with (.Tags.Get "upnp:icon") -}}
-<img style="width: 16px; height: 16px" src="{{ . }}" /> {{- end -}}{{- end -}}&nbsp;{{.Title}} {{- end -}}
+{{- define "IconURI" -}}
+    {{- with (.Tags.Get "upnp:albumArtURI") }}
+        {{- . -}}
+    {{- else -}}
+        {{- with (.Tags.Get "upnp:icon") -}}{{- . -}}{{- end -}}
+    {{- end -}}
+{{- end -}}
+
+{{- define "Title" -}}
+<img style="max-width:0.9em;max-height:0.9em" src="{{- template "IconURI" . -}}"/>&nbsp;{{.Title}}
+{{- end -}}
+
 <!DOCTYPE html>
 <html>
 
@@ -15,7 +24,7 @@
 
 <body>
     <div class="container">
-        <nav class="navbar navbar-expand-lg sticky-top">
+        <nav class="navbar navbar-expand-lg">
             <ul class="navbar-nav mr-auto">
                 <li>
                     <a class="navbar-brand" href="#">{{- template "Title" .model.Object -}}</a>

@@ -12,7 +12,7 @@ func (b BasicIconProcessor) Process(obj *cds.Object) error {
 	if icon == "" {
 		icon = "file"
 	}
-	obj.Tags.Set("upnp:icon", "/icons/"+icon+"-16.png")
+	obj.Tags.Set("upnp:icon", "/icons/"+icon+".png")
 	return nil
 }
 
@@ -22,7 +22,7 @@ func (v BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
 	}
 	mType := obj.MimeType().Type
 	switch mType {
-	case "audio", "video", "image":
+	case "audio", "video", "image", "text":
 		return mType
 	default:
 		return "file"
