@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"reflect"
 
@@ -83,6 +84,7 @@ type Config struct {
 	Logging   logging.Config
 	Interface Interface
 	HTTP      *net.TCPAddr
+	AccessLog string
 	// FFprobeCachePath string
 	// NoProbe          bool
 	NotifyInterval time.Duration
@@ -106,8 +108,7 @@ func (c *Config) SetupFlags() {
 	// flag.BoolVar(&config.StallEventSubscribe, "stallEventSubscribe", false, "workaround for some bad event subscribers")
 	flag.BoolVar(&c.IgnoreHidden, "ignoreHidden", c.IgnoreHidden, "ignore hidden files and directories")
 	flag.BoolVar(&c.IgnoreUnreadable, "ignoreUnreadable", c.IgnoreUnreadable, "ignore unreadable files and directories")
-	// flag.StringVar(&config.AccessLogPath, "accessLogPath", "", "path to log HTTP requests")
-
+	flag.StringVar(&c.AccessLog, "accessLog", "", "path to log HTTP requests")
 	flag.BoolVar(&c.Debug, "debug", c.Debug, "enable debugging features")
 
 	flag.Var(&c.Logging.Level, "level", "set logging levels")
@@ -166,6 +167,7 @@ type Container struct {
 	cds           *cds.Service
 	directory     cds.ContentDirectory
 	fileserver    *cds.FileServer
+	accessLog     io.Writer
 
 	indent string
 }
@@ -231,12 +233,12 @@ func (c *Container) SetupRouting(r *mux.Router) {
 func (c *Container) SetupMiddlewares(r *mux.Router) {
 	defer c.creating("Middleware")()
 
-	r.Use(func(next http.Handler) http.Handler {
-		return handlers.CombinedLoggingHandler(
-			os.Stdout,
-			next,
-		)
-	})
+	accessLog := c.AccessLog()
+	if accessLog != nil {
+		r.Use(func(next http.Handler) http.Handler {
+			return handlers.LoggingHandler(accessLog, next)
+		})
+	}
 
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -245,6 +247,23 @@ func (c *Container) SetupMiddlewares(r *mux.Router) {
 		})
 	})
 
+}
+
+func (c *Container) AccessLog() io.Writer {
+	if c.accessLog == nil {
+		defer c.creating("Access log")()
+		fpath := c.Config.AccessLog
+		if fpath == "-" {
+			c.accessLog = os.Stdout
+		} else {
+			var err error
+			c.accessLog, err = os.OpenFile(fpath, os.O_CREATE|os.O_APPEND, 0644)
+			if err != nil {
+				c.Logger("main").Errorf("cannot open access log file: %s", err)
+			}
+		}
+	}
+	return c.accessLog
 }
 
 func (c *Container) SSDPService() suture.Service {
