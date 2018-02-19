@@ -86,6 +86,7 @@ type Config struct {
 	// FFprobeCachePath string
 	// NoProbe          bool
 	NotifyInterval time.Duration
+	Debug          bool
 }
 
 func (c *Config) SetupFlags() {
@@ -107,8 +108,10 @@ func (c *Config) SetupFlags() {
 	flag.BoolVar(&c.IgnoreUnreadable, "ignoreUnreadable", c.IgnoreUnreadable, "ignore unreadable files and directories")
 	// flag.StringVar(&config.AccessLogPath, "accessLogPath", "", "path to log HTTP requests")
 
-	flag.Var(&c.Logging.Level, "level", "Set logging levels")
-	flag.BoolVar(&c.Logging.Quiet, "quiet", c.Logging.Quiet, "Only show errors")
+	flag.BoolVar(&c.Debug, "debug", c.Debug, "enable debugging features")
+
+	flag.Var(&c.Logging.Level, "level", "set logging levels")
+	flag.BoolVar(&c.Logging.Quiet, "quiet", c.Logging.Quiet, "only show errors")
 }
 
 func (c *Config) ParseArgs() {
@@ -180,6 +183,7 @@ func (c *Container) Supervisor() *suture.Supervisor {
 
 func (c *Container) Logger(name string) logging.Logger {
 	if c.loggerFactory == nil {
+		c.Logging.Debug = c.Debug
 		c.loggerFactory = c.Logging.Build()
 	}
 	return c.loggerFactory.Get(name)
@@ -206,8 +210,10 @@ func (c *Container) Router() *mux.Router {
 func (c *Container) SetupRouting(r *mux.Router) {
 	defer c.creating("Routing")()
 
-	r.Methods("GET").Path("/debug/router").
-		HandlerFunc(c.debugRouter)
+	if c.Debug {
+		r.Methods("GET").Path("/debug/router").
+			HandlerFunc(c.debugRouter)
+	}
 
 	r.Methods("GET", "HEAD").PathPrefix("/icons/").
 		Handler(http.FileServer(assets.FileSystem))
@@ -227,7 +233,7 @@ func (c *Container) SetupMiddlewares(r *mux.Router) {
 
 	r.Use(func(next http.Handler) http.Handler {
 		return handlers.CombinedLoggingHandler(
-			c.Logger("http").Writer(),
+			os.Stdout,
 			next,
 		)
 	})

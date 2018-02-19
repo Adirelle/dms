@@ -1,6 +1,7 @@
 package logging
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
@@ -10,7 +11,9 @@ import (
 )
 
 const (
-	RootLoggerName  = Name("")
+	// RootLoggerName is the name of the root logger
+	RootLoggerName = Name("")
+	// RootLoggerAlias is an alias of the root logger
 	RootLoggerAlias = "all"
 )
 
@@ -18,39 +21,44 @@ const (
 // Config
 //===========================================================================
 
+// Config holds the logging configuration and is used the build the Factory.
 type Config struct {
 	Level LoggerLevels
 	Quiet bool
+	Debug bool
 }
 
+// DefaultConfig returns a default configuration
 func DefaultConfig() Config {
 	c := Config{Level: make(LoggerLevels)}
 	c.Level[RootLoggerName] = zap.InfoLevel
 	return c
 }
 
+// Build creates the Logger Factory
 func (c *Config) Build() *Factory {
-
 	encConf := zap.NewProductionEncoderConfig()
 	encConf.EncodeLevel = zapcore.CapitalLevelEncoder
-	encConf.EncodeTime = zapcore.ISO8601TimeEncoder
+	encConf.TimeKey = ""
+
+	f := &Factory{Config: *c, loggers: make(map[Name]Logger)}
+
+	if c.Debug {
+		f.options = append(f.options, zap.Development(), zap.AddCaller())
+	}
 	consoleEnc := zapcore.NewConsoleEncoder(encConf)
 
-	cores := []zapcore.Core{
+	f.cores = append(
+		f.cores,
 		zapcore.NewCore(consoleEnc, zapcore.AddSync(os.Stderr), zap.ErrorLevel),
-	}
+	)
 	if !c.Quiet {
-		cores = append(
-			cores,
-			zapcore.NewCore(consoleEnc, zapcore.AddSync(os.Stdout), belowLevel{zap.ErrorLevel}),
+		f.cores = append(
+			f.cores,
+			zapcore.NewCore(consoleEnc, zapcore.AddSync(os.Stdout), not{zap.ErrorLevel}),
 		)
 	}
 
-	f := &Factory{
-		Config:   *c,
-		baseCore: zapcore.NewTee(cores...),
-		loggers:  make(map[Name]Logger),
-	}
 	zLogger := f.Get(RootLoggerAlias).(*logger).SugaredLogger.Desugar()
 	zap.ReplaceGlobals(zLogger)
 	zap.RedirectStdLog(zLogger)
@@ -61,8 +69,10 @@ func (c *Config) Build() *Factory {
 // Name
 //===========================================================================
 
+// Name is a clean, full Logger name
 type Name string
 
+// Clean creates a Logger Name from a string
 func Clean(name string) Name {
 	name = strings.Join(strings.Split(strings.Trim(name, "."), "."), ".")
 	if name == RootLoggerAlias {
@@ -71,10 +81,12 @@ func Clean(name string) Name {
 	return Name(name)
 }
 
+// String implements fmt.Stringer
 func (n Name) String() string {
 	return string(n)
 }
 
+// Parent returns the full Name of the parent Logger.
 func (n Name) Parent() Name {
 	dot := strings.LastIndex(string(n), ".")
 	if dot < 1 {
@@ -83,6 +95,7 @@ func (n Name) Parent() Name {
 	return Name(n[:dot])
 }
 
+// Child returns the full Name of a child Logger.
 func (n Name) Child(s string) Name {
 	if s == "" {
 		return n
@@ -91,28 +104,30 @@ func (n Name) Child(s string) Name {
 }
 
 //===========================================================================
-// belowLevel
+// not
 //===========================================================================
 
-type belowLevel struct{ zapcore.Level }
+type not struct{ zapcore.LevelEnabler }
 
-func (bl belowLevel) Enabled(l zapcore.Level) bool {
-	return !bl.Level.Enabled(l)
+func (n not) Enabled(l zapcore.Level) bool {
+	return !n.LevelEnabler.Enabled(l)
 }
 
 //===========================================================================
 // LoggerLevels
 //===========================================================================
 
+// LoggerLevels is a map of Levels for Logger Names
 type LoggerLevels map[Name]zapcore.Level
 
+// Get implements flags.Getter
 func (l LoggerLevels) Get() interface{} {
 	return l
 }
 
+// Get implements fmt.Stringer
 func (l LoggerLevels) String() string {
-	b := writerPool.Get()
-	defer b.Free()
+	b := &bytes.Buffer{}
 	first := true
 	for k, v := range l {
 		if first {
@@ -128,6 +143,7 @@ func (l LoggerLevels) String() string {
 	return b.String()
 }
 
+// Set implements flags.Value. It parses a comma-separater strings of name:level couples.
 func (l LoggerLevels) Set(value string) (err error) {
 	items := strings.Split(value, ",")
 	for _, item := range items {
@@ -148,6 +164,7 @@ func (l LoggerLevels) Set(value string) (err error) {
 	return
 }
 
+// Resolve returns the Level to use for the Named Logger.
 func (l LoggerLevels) Resolve(name Name) zapcore.Level {
 	for cur := name; cur != RootLoggerName; cur = cur.Parent() {
 		if level, found := l[cur]; found {

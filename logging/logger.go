@@ -1,18 +1,16 @@
 package logging
 
 import (
-	"fmt"
 	"io"
 
 	"go.uber.org/zap"
-	"go.uber.org/zap/buffer"
 )
 
 //===========================================================================
 // Logger
 //===========================================================================
 
-// Logger is a logger object..
+// Logger is a logger object
 type Logger interface {
 	DPanic(...interface{})
 	DPanicf(string, ...interface{})
@@ -60,7 +58,6 @@ type logger struct {
 }
 
 func (l *logger) Named(s string) Logger {
-	fmt.Printf("Named(%s): getting %s", s, l.name.Child(s))
 	return l.factory.get(l.name.Child(s))
 }
 
@@ -73,23 +70,22 @@ func (l *logger) Sync() error {
 }
 
 func (l *logger) Writer() io.WriteCloser {
-	return &writer{writerPool.Get(), l}
+	return &writer{l}
 }
 
 //===========================================================================
 // writer
 //===========================================================================
 
-var writerPool = buffer.NewPool()
-
 type writer struct {
-	*buffer.Buffer
 	l Logger
 }
 
+func (w *writer) Write(b []byte) (int, error) {
+	w.l.Info(b)
+	return len(b), nil
+}
+
 func (w *writer) Close() error {
-	w.l.Info(w.String())
-	w.Reset()
-	w.Buffer.Free()
 	return nil
 }
