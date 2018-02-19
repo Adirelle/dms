@@ -145,7 +145,7 @@ func (d *device) AddService(s *Service) {
 
 	desc.EventSubURL = "/sub"
 
-	for _, urn := range expandTypes(s.urn) {
+	for _, urn := range ExpandTypes(s.urn) {
 		for name, action := range s.actions {
 			d.soap.RegisterAction(xml.Name{urn, name}, action)
 		}
@@ -162,7 +162,7 @@ func (d *device) DDDLocation() (res *url.URL) {
 
 var versionedTypeRe = regexp.MustCompile(`^(urn:schemas-upnp-org:(?:service|device):[^:]+:)(\d+)$`)
 
-func expandTypes(t string) (ts []string) {
+func ExpandTypes(t string) (ts []string) {
 	subs := versionedTypeRe.FindStringSubmatch(t)
 	if subs == nil {
 		return []string{t}
@@ -178,12 +178,12 @@ func expandTypes(t string) (ts []string) {
 }
 
 func (d *device) DeviceTypes() []string {
-	return expandTypes(d.DeviceType)
+	return []string{d.DeviceType}
 }
 
 func (d *device) ServiceTypes() (res []string) {
 	for _, s := range d.Services {
-		res = append(res, expandTypes(s.URN)...)
+		res = append(res, s.URN)
 	}
 	return
 }

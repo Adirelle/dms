@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/anacrolix/dms/logging"
+	"github.com/anacrolix/dms/upnp"
 	"golang.org/x/net/ipv4"
 )
 
@@ -201,8 +202,10 @@ func (r *Responder) resolveST(st string) []string {
 		return types
 	}
 	for _, t := range types {
-		if t == st {
-			return []string{st}
+		for _, t2 := range upnp.ExpandTypes(t) {
+			if t2 == st {
+				return []string{st}
+			}
 		}
 	}
 	return nil
