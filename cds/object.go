@@ -72,20 +72,29 @@ func (o *Object) MimeType() types.MIME {
 }
 
 type Resource struct {
-	XMLName      xml.Name   `xml:"res"`
-	ProtocolInfo string     `xml:"protocolInfo,attr"`
-	URL          string     `xml:",chardata"`
-	Size         uint64     `xml:"size,attr,omitempty"`
-	Bitrate      uint       `xml:"bitrate,attr,omitempty"`
-	Duration     string     `xml:"duration,attr,omitempty"`
-	Resolution   string     `xml:"resolution,attr,omitempty"`
-	MimeType     types.MIME `xml:"-"`
+	XMLName      xml.Name      `xml:"res"`
+	ProtocolInfo string        `xml:"protocolInfo,attr"`
+	URL          string        `xml:",chardata"`
+	Size         uint64        `xml:"size,attr,omitempty"`
+	Tags         []ResourceTag `xml:",attr,omitempty"`
+	MimeType     types.MIME    `xml:"-"`
+	FilePath     string        `xml:"-"`
 
 	object *Object
 }
 
 func (r *Resource) Object() *Object {
 	return r.object
+}
+
+func (r *Resource) SetTag(name, value string) {
+	for i, t := range r.Tags {
+		if t.Name == name {
+			r.Tags[i].Value = value
+			return
+		}
+	}
+	r.Tags = append(r.Tags, ResourceTag{name, value})
 }
 
 type TagBag map[string]string
@@ -117,4 +126,13 @@ func (b *TagBag) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
 		}
 	}
 	return nil
+}
+
+type ResourceTag struct {
+	Name  string
+	Value string `xml:",chardata"`
+}
+
+func (t *ResourceTag) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
+	return xml.Attr{xml.Name{Local: t.Name}, t.Value}, nil
 }

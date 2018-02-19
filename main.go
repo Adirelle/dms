@@ -365,9 +365,17 @@ func (c *Container) Filesystem() *filesystem.Filesystem {
 func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.ContentDirectory) {
 	defer c.creating("Processors")()
 
-	d.AddProcessor(0, c.FileServer())
-	d.AddProcessor(10, &processor.AlbumArtProcessor{cache, c.FileServer(), c.Logger("album-art")})
-	d.AddProcessor(15, &processor.BasicIconProcessor{})
+	d.AddProcessor(100, c.FileServer())
+	d.AddProcessor(95, &processor.AlbumArtProcessor{cache, c.FileServer(), c.Logger("album-art")})
+	d.AddProcessor(90, &processor.BasicIconProcessor{})
+
+	l := c.Logger("ffprobe")
+	ffprober, err := processor.NewFFProbeProcessor("ffprobe", l)
+	if err == nil {
+		d.AddProcessor(80, ffprober)
+	} else {
+		l.Errorf("cannot initialize ffprobe: %s", err.Error())
+	}
 }
 
 func (c *Container) FileServer() *cds.FileServer {

@@ -78,6 +78,11 @@ type FileServer struct {
 	L logging.Logger
 }
 
+type FileServerResource struct {
+	Resource
+	FilePath string
+}
+
 func NewFileServer(directory ContentDirectory, pathPrefix string, logger logging.Logger) *FileServer {
 	fs := &FileServer{
 		DirectoryMiddleware{
@@ -104,12 +109,10 @@ func (s *FileServer) serveObjectContent(w http.ResponseWriter, r *http.Request) 
 	http.ServeContent(w, r, obj.Name(), obj.ModTime(), fh)
 }
 
-func (s *FileServer) Process(obj *Object) (err error) {
-	if obj.IsContainer() {
-		return
+func (s *FileServer) Process(obj *Object) {
+	if !obj.IsContainer() {
+		obj.AddResource(s.Resource(obj))
 	}
-	obj.AddResource(s.Resource(obj))
-	return
 }
 
 func (s *FileServer) Resource(obj *Object) Resource {
@@ -118,5 +121,6 @@ func (s *FileServer) Resource(obj *Object) Resource {
 		Size:         uint64(obj.Size()),
 		ProtocolInfo: fmt.Sprintf("http-get:*:%s:*", obj.MimeType().Value),
 		MimeType:     obj.MimeType(),
+		FilePath:     obj.FilePath,
 	}
 }

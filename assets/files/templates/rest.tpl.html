@@ -59,10 +59,16 @@
                 </tr>
                 {{- range . }}
                 <tr>
-                    <td colspan="2">
+                    <td>
                         <a href="{{ .URL }}">{{ .URL }}</a>
                     </td>
-                    <td class="text-right">{{.Size}}</td>
+                    <td class="text-right">{{ .Size }}</td>
+                    <td>
+                        type: {{ .MimeType.Value }}
+                        {{- range .Tags -}}
+                            <br/>{{ .Name }}: {{ .Value }}
+                        {{- end -}}
+                    </td>
                 </tr>
                 {{- end }} {{- end }} {{- with .model.Children }}
                 <tr>
