@@ -52,6 +52,7 @@ func main() {
 	config := &Config{
 		FriendlyName:   getDefaultFriendlyName(),
 		Config:         filesystem.Config{Root: "."},
+		Interface:      Interface{},
 		NotifyInterval: 30 * time.Minute,
 		HTTP:           &net.TCPAddr{Port: 1338},
 		Logging:        logging.DefaultConfig(),
@@ -79,7 +80,7 @@ type Config struct {
 	FriendlyName string
 	filesystem.Config
 	Logging   logging.Config
-	Interface *net.Interface
+	Interface Interface
 	HTTP      *net.TCPAddr
 	// FFprobeCachePath string
 	// NoProbe          bool
@@ -91,7 +92,7 @@ func (c *Config) SetupFlags() {
 
 	flag.StringVar(&c.Root, "path", c.Root, "browse root path")
 	flag.Var(tcpAddrVar{c.HTTP}, "http", "http server port")
-	flag.Var(ifaceVar{&c.Interface}, "ifname", "network interface to bind to")
+	flag.Var(&c.Interface, "ifname", "network interface to bind to")
 	flag.StringVar(&c.FriendlyName, "friendlyName", c.FriendlyName, "server friendly name")
 	// flag.StringVar(&config.FFprobeCachePath, "fFprobeCachePath", getDefaultFFprobeCachePath(), "path to FFprobe cache file")
 
@@ -350,10 +351,11 @@ func (c *Container) ValidInterfaces() (ret []net.Interface, err error) {
 }
 
 func (c *Container) Interfaces() ([]net.Interface, error) {
-	if c.Interface == nil {
+	iface := c.Interface.Get().(*net.Interface)
+	if iface == nil {
 		return net.Interfaces()
 	}
-	return []net.Interface{*c.Interface}, nil
+	return []net.Interface{*iface}, nil
 }
 
 func (c *Container) debugRouter(w http.ResponseWriter, _ *http.Request) {

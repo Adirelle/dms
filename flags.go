@@ -59,23 +59,23 @@ func (t tcpAddrVar) Set(address string) (err error) {
 	return
 }
 
-type ifaceVar struct{ iface **net.Interface }
+type Interface struct{ iface *net.Interface }
 
-func (i ifaceVar) String() string {
-	if *i.iface != nil {
-		return (*i.iface).Name
+func (i *Interface) String() string {
+	if i.iface != nil {
+		return i.iface.Name
 	}
 	return ""
 }
 
-func (i ifaceVar) Get() interface{} {
+func (i *Interface) Get() interface{} {
 	return i.iface
 }
 
-func (i ifaceVar) Set(ifname string) (err error) {
+func (i *Interface) Set(ifname string) (err error) {
 	iface, err := net.InterfaceByName(ifname)
 	if err == nil {
-		*i.iface = iface
+		i.iface = iface
 	}
 	return
 }
