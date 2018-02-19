@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/xml"
 	"net/http"
+	"time"
 
 	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
@@ -25,8 +26,9 @@ const (
 type Service struct {
 	directory ContentDirectory
 
-	upnp *upnp.Service
-	l    logging.Logger
+	upnp    *upnp.Service
+	l       logging.Logger
+	modTime time.Time
 }
 
 // New initializes a content-directory service
@@ -35,6 +37,7 @@ func NewService(directory ContentDirectory, logger logging.Logger) *Service {
 		directory: directory,
 		upnp:      upnp.NewService(ServiceID, ServiceType, logger),
 		l:         logger,
+		modTime:   time.Now(),
 	}
 
 	s.upnp.AddActionFunc("Browse", s.Browse)
@@ -50,11 +53,7 @@ func (s *Service) UPNPService() *upnp.Service {
 }
 
 func (s *Service) updateID() uint32 {
-	root, err := s.directory.Get(filesystem.RootID)
-	if err != nil {
-		s.l.Panicf("could not fetch content-directory root: %s", err.Error())
-	}
-	return uint32(root.ModTime().Unix() & 0x7fff)
+	return uint32(s.modTime.Unix())
 }
 
 type empty struct {
@@ -108,22 +107,35 @@ type browseReply struct {
 	NumberReturned uint32   `statevar:"A_ARG_TYPE_Count"`
 	TotalMatches   uint32   `statevar:"A_ARG_TYPE_Count"`
 	UpdateID       uint32   `statevar:"A_ARG_TYPE_UpdateID"`
+
+	modTime time.Time
 }
 
 func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err error) {
 	if q.ObjectID == "0" {
 		q.ObjectID = filesystem.RootID
 	}
+	r.modTime = s.modTime
 	ctx, cFunc := context.WithCancel(req.Context())
 	defer cFunc()
 	err = s.doBrowse(&r, q, ctx)
 	if err != nil {
 		return
 	}
+	if r.modTime.After(s.modTime) {
+		s.modTime = r.modTime
+	}
 	r.XMLNS = q.XMLName.Space
 	r.UpdateID = s.updateID()
-	r.NumberReturned = uint32(len(r.Result))
 	return
+}
+
+func (r *browseReply) AddResult(o *Object) {
+	r.Result.Append(o)
+	r.NumberReturned++
+	if o.ModTime().After(r.modTime) {
+		r.modTime = o.ModTime()
+	}
 }
 
 func (s *Service) doBrowse(r *browseReply, q browseQuery, ctx context.Context) error {
