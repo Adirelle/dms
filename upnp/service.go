@@ -131,7 +131,7 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	if parts[0] != "" {
 		name = parts[0]
 	}
-	if ignoreField(name, f.Type) {
+	if ignoreField(name, f) {
 		name = ""
 		return
 	}
@@ -155,6 +155,6 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	return
 }
 
-func ignoreField(name string, type_ reflect.Type) bool {
-	return name == "XMLName" || name == "XMLNS" || type_.String() == "xml.Name"
+func ignoreField(name string, f reflect.StructField) bool {
+	return name == "-" || name == "XMLName" || name == "XMLNS" || f.PkgPath != "" || f.Type.String() == "xml.Name"
 }
