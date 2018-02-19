@@ -31,6 +31,7 @@ import (
 	"github.com/anacrolix/dms/ssdp"
 	"github.com/anacrolix/dms/upnp"
 	"github.com/bluele/gcache"
+	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/satori/go.uuid"
 	"gopkg.in/thejerf/suture.v2"
@@ -196,8 +197,8 @@ func (c *Container) Router() *mux.Router {
 	if c.router == nil {
 		defer c.creating("Router")()
 		c.router = mux.NewRouter()
-		c.SetupRouting(c.router)
 		c.SetupMiddlewares(c.router)
+		c.SetupRouting(c.router)
 	}
 	return c.router
 }
@@ -221,8 +222,23 @@ func (c *Container) SetupRouting(r *mux.Router) {
 		Handler(http.RedirectHandler("/rest/", http.StatusSeeOther))
 }
 
-func (c *Container) SetupMiddlewares(_ *mux.Router) {
+func (c *Container) SetupMiddlewares(r *mux.Router) {
 	defer c.creating("Middleware")()
+
+	r.Use(func(next http.Handler) http.Handler {
+		return handlers.CombinedLoggingHandler(
+			c.Logger("http").Writer(),
+			next,
+		)
+	})
+
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Server", ServerToken)
+			next.ServeHTTP(w, r)
+		})
+	})
+
 }
 
 func (c *Container) SSDPService() suture.Service {
