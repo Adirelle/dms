@@ -5,8 +5,6 @@ import (
 	"math/rand"
 	"net/http"
 	"strconv"
-
-	"go.uber.org/zap"
 )
 
 type contextKey int
@@ -22,7 +20,7 @@ func FromContext(ctx context.Context) Logger {
 	if logger, ok := maybeLogger.(Logger); ok {
 		return logger
 	}
-	return Wrap(zap.L(), nil)
+	return nil
 }
 
 func RequestWithLogger(req *http.Request, l Logger) *http.Request {

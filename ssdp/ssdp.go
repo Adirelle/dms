@@ -44,9 +44,9 @@ func (c *Config) allTypes() []string {
 
 func New(c Config, l logging.Logger) suture.Service {
 	spv := suture.NewSimple("ssdp")
-	r := NewResponder(c, l)
+	r := NewResponder(c, l.Named("responder"))
 	spv.Add(r)
-	spv.Add(NewAdvertiser(c, r.Port, l))
+	spv.Add(NewAdvertiser(c, r.Port, l.Named("advertiser")))
 	return spv
 }
 

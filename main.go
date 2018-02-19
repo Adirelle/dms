@@ -66,11 +66,9 @@ func main() {
 	ctn.Logger("main").Infof("DMS #%s, build on %s", CommitRef, BuildDate)
 
 	spv.ServeBackground()
+	defer spv.Stop()
 
-	defer func() {
-		spv.Stop()
-		ctn.logger.Sync()
-	}()
+	defer ctn.Logger("").Sync()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGINT)
@@ -107,10 +105,8 @@ func (c *Config) SetupFlags() {
 	flag.BoolVar(&c.IgnoreUnreadable, "ignoreUnreadable", c.IgnoreUnreadable, "ignore unreadable files and directories")
 	// flag.StringVar(&config.AccessLogPath, "accessLogPath", "", "path to log HTTP requests")
 
-	flag.BoolVar(&c.Logging.Debug, "debug", c.Logging.Debug, "Enable development logging")
-	flag.Var(stringsVar(c.Logging.OutputPaths), "logPath", "Log files")
-	flag.Var(&c.Logging.Level, "logLevel", "Minimum log level")
-	flag.BoolVar(&c.Logging.NoDate, "logNoDate", c.Logging.NoDate, "Disable timestamp in log")
+	flag.Var(&c.Logging.Level, "level", "Set logging levels")
+	flag.BoolVar(&c.Logging.Quiet, "quiet", c.Logging.Quiet, "Only show errors")
 }
 
 func (c *Config) ParseArgs() {
@@ -154,17 +150,17 @@ func getDefaultFriendlyName() string {
 type Container struct {
 	*Config
 
-	router     *mux.Router
-	upnp       upnp.Device
-	fs         *filesystem.Filesystem
-	logger     logging.Logger
-	udn        string
-	ssdp       suture.Service
-	http       suture.Service
-	spv        *suture.Supervisor
-	cds        *cds.Service
-	directory  cds.ContentDirectory
-	fileserver *cds.FileServer
+	router        *mux.Router
+	upnp          upnp.Device
+	fs            *filesystem.Filesystem
+	loggerFactory *logging.Factory
+	udn           string
+	ssdp          suture.Service
+	http          suture.Service
+	spv           *suture.Supervisor
+	cds           *cds.Service
+	directory     cds.ContentDirectory
+	fileserver    *cds.FileServer
 
 	indent string
 }
@@ -181,10 +177,10 @@ func (c *Container) Supervisor() *suture.Supervisor {
 }
 
 func (c *Container) Logger(name string) logging.Logger {
-	if c.logger == nil {
-		c.logger = logging.New(c.Logging)
+	if c.loggerFactory == nil {
+		c.loggerFactory = c.Logging.Build()
 	}
-	return c.logger.Named(name)
+	return c.loggerFactory.Get(name)
 }
 
 func (c *Container) HTTPService() suture.Service {
@@ -208,10 +204,8 @@ func (c *Container) Router() *mux.Router {
 func (c *Container) SetupRouting(r *mux.Router) {
 	defer c.creating("Routing")()
 
-	if c.Logging.Debug {
-		r.Methods("GET").Path("/debug/router").
-			HandlerFunc(c.debugRouter)
-	}
+	r.Methods("GET").Path("/debug/router").
+		HandlerFunc(c.debugRouter)
 
 	r.Methods("GET", "HEAD").PathPrefix("/icons/").
 		Handler(http.FileServer(assets.FileSystem))

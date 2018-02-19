@@ -6,13 +6,17 @@ import (
 	"testing"
 )
 
-// NewTesting creates a logger that forwards everything to the testing log.
-func NewTesting(t *testing.T) Logger {
-	return &testingLogger{t}
-}
+//===========================================================================
+// testingLogger
+//===========================================================================
 
 type testingLogger struct {
 	t *testing.T
+}
+
+// NewTesting creates a logger that forwards everything to the testing log.
+func NewTesting(t *testing.T) Logger {
+	return &testingLogger{t}
 }
 
 func (l *testingLogger) DPanic(a ...interface{})            { l.t.Log(a...) }
@@ -40,6 +44,11 @@ func (l *testingLogger) Named(string) Logger                { return l }
 func (l *testingLogger) With(...interface{}) Logger         { return l }
 func (l *testingLogger) Sync() error                        { return nil }
 func (l *testingLogger) Writer() io.WriteCloser             { return nopWriter{ioutil.Discard} }
+func (l *testingLogger) get(name string) Logger             { return l }
+
+//===========================================================================
+// nopWriter
+//===========================================================================
 
 type nopWriter struct{ io.Writer }
 

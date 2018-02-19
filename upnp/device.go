@@ -169,7 +169,7 @@ func expandTypes(t string) (ts []string) {
 	}
 	v, err := strconv.Atoi(subs[2])
 	if err != nil {
-		logging.Panicf("cannot convert %q to int: %s", subs[2], err)
+		log.Panicf("cannot convert %q to int: %s", subs[2], err)
 	}
 	for ; v >= 1; v-- {
 		ts = append(ts, fmt.Sprintf("%s%d", subs[1], v))

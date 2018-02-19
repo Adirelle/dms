@@ -2,6 +2,7 @@ package upnp
 
 import (
 	"encoding/xml"
+	"log"
 	"reflect"
 	"strings"
 
@@ -62,7 +63,7 @@ func NewService(id, urn string, l logging.Logger) *Service {
 // It panics if it already exists.
 func (s *Service) AddAction(name string, action Action) {
 	if _, exists := s.actions[name]; exists {
-		logging.Panicf("Action %q already defined", name)
+		log.Panicf("Action %q already defined", name)
 	}
 	s.actions[name] = action
 	desc := actionDesc{Name: name}
@@ -143,7 +144,7 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	} else if dt, ok := upnpTypeMap[f.Type.String()]; ok {
 		stateVar.DataType = dt
 	} else {
-		logging.Panicf("cannot map type of field %s: %s", f.Name, f.Type.String())
+		log.Panicf("cannot map type of field %s: %s", f.Name, f.Type.String())
 	}
 	if parts[2] != "" {
 		values := strings.Split(parts[2], ",")
