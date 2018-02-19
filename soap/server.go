@@ -4,9 +4,13 @@ import (
 	"encoding/xml"
 	"net/http"
 	"reflect"
+	"strconv"
 
 	"github.com/anacrolix/dms/logging"
+	"go.uber.org/zap/buffer"
 )
+
+var bufferPool = buffer.NewPool()
 
 // Server holds the action map and can serve SOAP through HTTP
 type Server struct {
@@ -42,14 +46,23 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		log.Warn(err.Error())
 	}
 
-	w.Header().Set("Content-Type", `application/soap+xml; charset="UTF-8"`)
-	if _, err = w.Write(responseHeader); err == nil {
-		if err = xml.NewEncoder(w).Encode(res); err == nil {
-			_, err = w.Write(responseFooter)
+	b := bufferPool.Get()
+	defer b.Free()
+	if _, err = b.Write(responseHeader); err == nil {
+		if err = xml.NewEncoder(b).Encode(res); err == nil {
+			_, err = b.Write(responseFooter)
 		}
 	}
+
+	l := b.Len()
+	w.Header().Set("Content-Length", strconv.Itoa(l))
+	w.Header().Set("Content-Type", `text/xml; charset="utf-8"`)
+
+	n, err := w.Write(b.Bytes())
 	if err != nil {
 		log.Warnf("error marshalling SOAP response: %s", err.Error())
+	} else if n < l {
+		log.Warnf("short write: %s/%s", n, l)
 	}
 }
 

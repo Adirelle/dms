@@ -1,14 +1,19 @@
 package upnp
 
 import (
+	"bytes"
 	"encoding/xml"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"regexp"
 	"strconv"
 	"sync"
+	"time"
+
+	"go.uber.org/zap/buffer"
 
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/soap"
@@ -27,6 +32,8 @@ type Device interface {
 	AddService(*Service)
 
 	DDDLocation() *url.URL
+	UniqueDeviceName() string
+	ConfigID() int32
 	DeviceTypes() []string
 	ServiceTypes() []string
 }
@@ -54,6 +61,7 @@ type DeviceSpec struct {
 	ModelURL         string `xml:"modelURL"`
 	UDN              string
 	UPC              string
+	LastModified     time.Time `xml:"-"`
 }
 
 type device struct {
@@ -108,7 +116,7 @@ func NewDevice(spec DeviceSpec, router *mux.Router, logger logging.Logger) Devic
 
 	must(router.Methods("POST").
 		Path("/control").
-		HeadersRegexp("Content-Type", "(application|text)/(soap+)?xml").
+		HeadersRegexp("Content-Type", `(application|text)/(soap\+)?xml`).
 		Name(ControlRoute).
 		Handler(dev.soap).
 		GetError())
@@ -160,6 +168,14 @@ func (d *device) DDDLocation() (res *url.URL) {
 	return
 }
 
+func (d *device) UniqueDeviceName() string {
+	return d.UDN
+}
+
+func (d *device) ConfigID() int32 {
+	return int32(d.LastModified.Unix() & 0x3fff)
+}
+
 var versionedTypeRe = regexp.MustCompile(`^(urn:schemas-upnp-org:(?:service|device):[^:]+:)(\d+)$`)
 
 func ExpandTypes(t string) (ts []string) {
@@ -190,34 +206,38 @@ func (d *device) ServiceTypes() (res []string) {
 
 func (d *device) describeDevice(w http.ResponseWriter, r *http.Request) {
 	urlBase := &url.URL{Scheme: "http", Host: r.Host, Path: ""}
-
-	w.Header().Set("Content-Type", `text/xml; encoding="UTF-8"`)
-	_, err := w.Write([]byte(xml.Header))
-	if err == nil {
-		err = xml.NewEncoder(w).Encode(rootDevice{
-			SpecVersion: specVersion{1, 0},
-			URLBase:     urlBase.String(),
-			Device:      d,
-		})
-	}
-	if err != nil {
-		d.logger.Warnf(err.Error())
-	}
+	d.serveXML(w, r, rootDevice{
+		SpecVersion: specVersion{1, 0},
+		URLBase:     urlBase.String(),
+		Device:      d,
+	})
 }
 
 func (d *device) describeService(w http.ResponseWriter, r *http.Request) {
 	idx, err := strconv.Atoi(mux.Vars(r)["service"])
 	if err != nil {
 		http.Error(w, "Unknown service", http.StatusNotFound)
+		return
 	}
-	service := d.Services[idx].service
+	d.serveXML(w, r, d.Services[idx].service)
+}
 
-	w.Header().Set("Content-Type", `text/xml; encoding="UTF-8"`)
-	_, err = w.Write([]byte(xml.Header))
+var bufferPool = buffer.NewPool()
+
+func (d *device) serveXML(w http.ResponseWriter, r *http.Request, data interface{}) {
+	b := bufferPool.Get()
+	defer b.Free()
+
+	_, err := b.Write([]byte(xml.Header))
 	if err == nil {
-		err = xml.NewEncoder(w).Encode(service)
+		err = xml.NewEncoder(b).Encode(data)
 	}
 	if err != nil {
-		d.logger.Warnf(err.Error())
+		d.logger.Error(err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
+
+	w.Header().Set("Content-Type", `text/xml; encoding="utf-8"`)
+	http.ServeContent(w, r, path.Base(r.URL.Path), d.LastModified, bytes.NewReader(b.Bytes()))
 }

@@ -1,12 +1,19 @@
 package rest
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
+	"path"
 	"strings"
+	"time"
+
+	"go.uber.org/zap/buffer"
 
 	"github.com/anacrolix/dms/assets"
 )
+
+var bufferPool = buffer.NewPool()
 
 type htmlProcessor struct {
 	Prefix string
@@ -21,11 +28,20 @@ func (h htmlProcessor) Process(w http.ResponseWriter, req *http.Request, dataMod
 	if err != nil {
 		return
 	}
-	w.Header().Set("Content-Type", `text/html; charset="UTF-8"`)
-	return tpl.Execute(w, map[string]interface{}{
+	b := bufferPool.Get()
+	defer b.Free()
+
+	err = tpl.Execute(b, map[string]interface{}{
 		"model":      dataModel,
 		"pathPrefix": h.Prefix,
 	})
+	if err != nil {
+		return
+	}
+
+	w.Header().Set("Content-Type", `text/html; charset="utf-8"`)
+	http.ServeContent(w, req, path.Base(req.URL.Path), time.Now(), bytes.NewReader(b.Bytes()))
+	return
 }
 
 func buildTemplate() (*template.Template, error) {

@@ -281,11 +281,11 @@ func (c *Container) SSDPService() suture.Service {
 					url.Host = fmt.Sprintf("%s:%d", ip, c.HTTP.Port)
 					return url.String()
 				},
-				UUID:     c.UDN(),
+				UUID:     upnp.UniqueDeviceName(),
 				Devices:  upnp.DeviceTypes(),
 				Services: upnp.ServiceTypes(),
 				BootID:   int32(time.Now().Unix() & 0x3fff), // TODO find the right mask
-				ConfigID: int32(c.CRC32()) & 0x3fff,         // TODO find the right mask
+				ConfigID: upnp.ConfigID(),
 			},
 			c.Logger("ssdp"),
 		)
@@ -308,6 +308,7 @@ func (c *Container) UPNP() upnp.Device {
 				ModelURL:         ModelURL,
 				UDN:              c.UDN(),
 				UPC:              "000000",
+				LastModified:     time.Unix(BuildDateUnixTS, 0),
 			},
 			c.Router(),
 			c.Logger("upnp-device"),

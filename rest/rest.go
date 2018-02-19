@@ -47,7 +47,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		return
 	}
-	s.L.Warn(err)
+	s.L.Error(err)
 	if os.IsNotExist(err) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	} else {
