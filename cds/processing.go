@@ -2,16 +2,19 @@ package cds
 
 import (
 	"sort"
+
+	"github.com/anacrolix/dms/logging"
 )
 
 // Processor adds information to Object
 type Processor interface {
-	Process(*Object) error
+	Process(*Object)
 }
 
 // ProcessingDirectory uses processors to enrich the objects
 type ProcessingDirectory struct {
 	ContentDirectory
+	logging.Logger
 	processorList
 }
 
@@ -22,9 +25,8 @@ func (d *ProcessingDirectory) Get(id string) (obj *Object, err error) {
 		return
 	}
 	for _, proc := range d.processorList {
-		err = proc.Process(obj)
-		if err != nil {
-			break
+		if err := logging.CatchPanic(func() { proc.Process(obj) }); err != nil {
+			d.Warn(err)
 		}
 	}
 	return

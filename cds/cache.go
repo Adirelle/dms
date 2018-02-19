@@ -50,12 +50,19 @@ func (s getSuccess) Resolve() (*Object, error) {
 	return s.obj, nil
 }
 
-func (c *Cache) load(key interface{}) (interface{}, *time.Duration, error) {
-	obj, err := c.directory.Get(key.(string))
-	if err != nil {
-		return getFailure{err}, &FailureTTL, nil
+func (c *Cache) load(key interface{}) (res interface{}, ttl *time.Duration, err error) {
+	defer func() {
+		if rec := logging.RecoverError(); rec != nil {
+			res, ttl = getFailure{err}, &FailureTTL
+		}
+	}()
+	obj, getErr := c.directory.Get(key.(string))
+	if getErr != nil {
+		res, ttl = getFailure{getErr}, &FailureTTL
+	} else {
+		res, ttl = getSuccess{obj}, &FailureTTL
 	}
-	return getSuccess{obj}, &SuccessTTL, nil
+	return
 }
 
 func (c *Cache) added(key interface{}, _ interface{}) {

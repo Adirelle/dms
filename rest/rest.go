@@ -2,6 +2,7 @@ package rest
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -43,11 +44,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	data, err := s.getResponse(strings.TrimPrefix(r.URL.Path, s.Prefix), ctx)
 	if err == nil {
 		err = s.negt.Negotiate(w, r, data)
+		if err == nil {
+			return
+		}
+		s.L.Errorf("negotiation error: %s", err)
+	} else {
+		s.L.Errorf("building response error: %s", err)
 	}
-	if err == nil {
-		return
-	}
-	s.L.Error(err)
 	if os.IsNotExist(err) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	} else {
@@ -58,11 +61,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getResponse(id string, ctx context.Context) (data response, err error) {
 	data.Object, err = s.Directory.Get(id)
 	if err != nil {
+		err = fmt.Errorf("error getting %q: %s", id, err.Error())
 		return
 	}
 	children, errs := cds.GetChildren(s.Directory, id, ctx)
 	open := true
-	var child *cds.Object
+	var (
+		child *cds.Object
+		warn  error
+	)
 	for open {
 		select {
 		case _, open = <-ctx.Done():
@@ -71,10 +78,9 @@ func (s *Server) getResponse(id string, ctx context.Context) (data response, err
 			if open {
 				data.Children = append(data.Children, child)
 			}
-		case err, open = <-errs:
+		case warn, open = <-errs:
 			if open {
-				s.L.Warn(err)
-				err = nil
+				s.L.Warn(warn)
 			}
 		}
 	}

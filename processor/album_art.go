@@ -15,8 +15,9 @@ type AlbumArtProcessor struct {
 	L             logging.Logger
 }
 
-func (a *AlbumArtProcessor) Process(obj *cds.Object) error {
+func (a *AlbumArtProcessor) Process(obj *cds.Object) {
 	var parentID string
+
 	if obj.IsContainer() {
 		parentID = obj.ID
 		a.L.Debugf("Looking for album art for container %s", obj.ID)
@@ -25,8 +26,9 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object) error {
 		parentID = obj.ParentID
 	} else {
 		a.L.Debugf("Ignoring %s", obj.ID)
-		return nil
+		return
 	}
+
 	for _, name := range coverNames {
 		coverID := parentID + "/" + name
 		cover, err := a.Directory.Get(coverID)
@@ -36,6 +38,6 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object) error {
 		a.L.Debugf("Found %s", cover.ID)
 		path := a.PathGenerator.URLPath(cover)
 		obj.Tags.Set(AlbumArtURI, path)
+		return
 	}
-	return nil
 }

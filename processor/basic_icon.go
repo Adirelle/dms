@@ -7,13 +7,12 @@ import (
 type BasicIconProcessor struct {
 }
 
-func (b BasicIconProcessor) Process(obj *cds.Object) error {
+func (b BasicIconProcessor) Process(obj *cds.Object) {
 	icon := b.guessIcon(obj)
 	if icon == "" {
 		icon = "file"
 	}
 	obj.Tags.Set("upnp:icon", "/icons/"+icon+".png")
-	return nil
 }
 
 func (v BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {

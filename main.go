@@ -339,7 +339,7 @@ func (c *Container) ContentDirectory() cds.ContentDirectory {
 	if c.directory == nil {
 		defer c.creating("ContentDirectory")()
 		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger("directory"))
-		processing := &cds.ProcessingDirectory{ContentDirectory: base}
+		processing := &cds.ProcessingDirectory{ContentDirectory: base, Logger: c.Logger("processing")}
 		c.directory = cds.NewCache(
 			processing,
 			gcache.New(1000).ARC(),

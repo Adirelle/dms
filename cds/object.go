@@ -2,6 +2,7 @@ package cds
 
 import (
 	"encoding/xml"
+	"fmt"
 	"strings"
 
 	"github.com/anacrolix/dms/filesystem"
@@ -42,6 +43,7 @@ func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string
 	}
 	typ, err := filetype.MatchFile(obj.FilePath)
 	if err != nil {
+		err = fmt.Errorf("error probing %q: %s", obj.FilePath, err.Error())
 		return
 	}
 	title = strings.TrimSuffix(obj.Name(), "."+typ.Extension)
