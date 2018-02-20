@@ -47,11 +47,11 @@ func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string
 		return
 	}
 	title = strings.TrimSuffix(obj.Name(), "."+typ.Extension)
+	class = "object.item"
 	mimeType = typ.MIME
-	if mimeType.Subtype == "audio" || mimeType.Subtype == "video" || mimeType.Subtype == "image" {
-		class = "object." + mimeType.Subtype + "Item"
-	} else {
-		class = "object.item"
+	switch mimeType.Type {
+	case "audio", "video", "image", "text":
+		class += "." + mimeType.Type + "Item"
 	}
 	return
 }
