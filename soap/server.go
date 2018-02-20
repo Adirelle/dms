@@ -39,11 +39,11 @@ var (
 
 // ServeHTTP implements http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	log := logging.FromRequest(r)
 	res, err := s.serve(r)
 	if err != nil {
 		res = ConvertError("s:Server", err)
-		log.Warn(err.Error())
+		s.l.Warn(err.Error())
+		err = nil
 	}
 
 	b := bufferPool.Get()
@@ -53,6 +53,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_, err = b.Write(responseFooter)
 		}
 	}
+	if err != nil {
+		s.l.Errorf("error marshalling SOAP response: %s", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	l := b.Len()
 	w.Header().Set("Content-Length", strconv.Itoa(l))
@@ -60,9 +65,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	n, err := w.Write(b.Bytes())
 	if err != nil {
-		log.Warnf("error marshalling SOAP response: %s", err.Error())
+		s.l.Errorf("error sending response: %s", err.Error())
 	} else if n < l {
-		log.Warnf("short write: %s/%s", n, l)
+		s.l.Errorf("short write: %s/%s", n, l)
 	}
 }
 
@@ -71,7 +76,9 @@ func (s *Server) serve(r *http.Request) (res interface{}, err error) {
 	payload := &(env.Body.Payload)
 	payload.actions = s.actions
 	if err = xml.NewDecoder(r.Body).Decode(&env); err == nil {
+		s.l.Debugf("query: %#v", payload.value)
 		res, err = payload.action.Handle(payload.value, r)
+		s.l.Debugf("response: %#v, err: %v", res, err)
 	} else {
 		err = ConvertError("s:Client", err)
 	}
