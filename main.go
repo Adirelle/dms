@@ -98,16 +98,9 @@ func (c *Config) SetupFlags() {
 	flag.Var(tcpAddrVar{c.HTTP}, "http", "http server port")
 	flag.Var(&c.Interface, "ifname", "network interface to bind to")
 	flag.StringVar(&c.FriendlyName, "friendlyName", c.FriendlyName, "server friendly name")
-	// flag.StringVar(&config.FFprobeCachePath, "fFprobeCachePath", getDefaultFFprobeCachePath(), "path to FFprobe cache file")
 
 	flag.DurationVar(&c.NotifyInterval, "notifyInterval", c.NotifyInterval, "interval between SSPD announces")
 
-	// flag.BoolVar(&config.LogHeaders, "logHeaders", false, "log HTTP headers")
-	// flag.BoolVar(&config.NoTranscode, "noTranscode", false, "disable transcoding")
-	// flag.BoolVar(&config.NoProbe, "noProbe", false, "disable media probing with ffprobe")
-	// flag.BoolVar(&config.StallEventSubscribe, "stallEventSubscribe", false, "workaround for some bad event subscribers")
-	flag.BoolVar(&c.IgnoreHidden, "ignoreHidden", c.IgnoreHidden, "ignore hidden files and directories")
-	flag.BoolVar(&c.IgnoreUnreadable, "ignoreUnreadable", c.IgnoreUnreadable, "ignore unreadable files and directories")
 	flag.StringVar(&c.AccessLog, "accessLog", "", "path to log HTTP requests")
 	flag.BoolVar(&c.Debug, "debug", c.Debug, "enable debugging features")
 

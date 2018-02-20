@@ -17,10 +17,6 @@ const NullID = "-1"
 type Config struct {
 	// Root of the filesystem, a.k.a. directory to serve
 	Root string
-	// Do not list hidden files/directories ?
-	IgnoreHidden bool
-	// Do not list files/directories that cannot be open ?
-	IgnoreUnreadable bool
 }
 
 // Filesystem is the main entry point
@@ -40,7 +36,7 @@ type Object struct {
 
 // New creates a new Filesystem based on the passed configuration
 func New(conf Config) (fs *Filesystem, err error) {
-	conf.Root, err = filepath.Abs(conf.Root)
+	conf.Root, err = filepath.Abs(filepath.Clean(conf.Root))
 	if err == nil {
 		fs = &Filesystem{conf}
 	}
@@ -53,12 +49,11 @@ func (fs *Filesystem) Get(id string) (ret *Object, err error) {
 		err = fmt.Errorf("Invalid object ID %q", id)
 		return
 	}
-	fp := filepath.FromSlash(path.Join(fs.c.Root, id))
+	fp := filepath.Join(fs.c.Root, filepath.FromSlash(id))
 	accept, err := fs.filter(fp)
 	if err == nil && !accept {
 		err = os.ErrNotExist
-	}
-	if err != nil {
+	} else if err != nil {
 		return
 	}
 	fi, err := os.Stat(fp)
@@ -108,18 +103,17 @@ func (fs *Filesystem) readChildren(id, dir string) (ret []string, err error) {
 }
 
 func (fs *Filesystem) filter(path string) (accept bool, err error) {
-	var isHidden, isUnreadable bool
-	if fs.c.IgnoreHidden {
-		if isHidden, err = isHiddenPath(path); err != nil {
-			return
-		}
+	accept = true
+	if isHidden, err := isHiddenPath(path); err != nil {
+		return false, err
+	} else if isHidden {
+		accept = false
 	}
-	if fs.c.IgnoreUnreadable {
-		if isUnreadable, err = isReadablePath(path); err != nil {
-			return
-		}
+	if isReadable, err := isReadablePath(path); err != nil {
+		return false, err
+	} else if !isReadable {
+		accept = false
 	}
-	accept = !isHidden && !isUnreadable
 	return
 }
 
