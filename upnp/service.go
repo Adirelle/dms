@@ -30,7 +30,7 @@ type Service struct {
 }
 
 type actionDesc struct {
-	Name      string         `xml:"action"`
+	Name      string         `xml:"name"`
 	Arguments []argumentDesc `xml:"argumentList>argument"`
 }
 
