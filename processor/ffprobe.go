@@ -19,12 +19,13 @@ type FFProbeProcessor struct {
 	binPath string
 	l       logging.Logger
 	cache   ffprobeCache
+	lock    sync.Locker
 }
 
 func NewFFProbeProcessor(path string, logger logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(path)
 	if err == nil {
-		p = &FFProbeProcessor{binPath: realPath, l: logger}
+		p = &FFProbeProcessor{binPath: realPath, l: logger, lock: concurrencyLock(make(chan struct{}, 20))}
 		p.cache = ffprobeCache{gcache.New(1000).ARC().LoaderFunc(p.doProbe).Build()}
 	}
 	return
@@ -61,7 +62,7 @@ var tagMap = map[string]string{
 }
 
 func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
-	info, err := p.cache.Get(obj.FilePath)
+	info, err := p.probePath(obj.FilePath)
 	if err != nil {
 		return
 	}
@@ -85,7 +86,7 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
 }
 
 func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
-	info, err := p.cache.Get(res.FilePath)
+	info, err := p.probePath(res.FilePath)
 	if err != nil {
 		return
 	}
@@ -126,6 +127,12 @@ func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
 			}
 		}
 	}
+}
+
+func (p *FFProbeProcessor) probePath(path string) (ffprobeInfo, error) {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	return p.cache.Get(path)
 }
 
 type ffprobeCache struct{ gcache.Cache }
@@ -204,4 +211,18 @@ func formatDuration(d float64) string {
 	m := (uint64(d) / 60) % 60
 	s := math.Mod(d, 60.0)
 	return fmt.Sprintf("%d:%02d:%02.6f", h, m, s)
+}
+
+type concurrencyLock chan struct{}
+
+func (c concurrencyLock) Lock() {
+	var s struct{}
+	c <- s
+}
+
+func (c concurrencyLock) Unlock() {
+	select {
+	case <-c:
+	default:
+	}
 }
