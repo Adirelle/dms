@@ -107,35 +107,27 @@ type browseReply struct {
 	NumberReturned uint32   `statevar:"A_ARG_TYPE_Count"`
 	TotalMatches   uint32   `statevar:"A_ARG_TYPE_Count"`
 	UpdateID       uint32   `statevar:"A_ARG_TYPE_UpdateID"`
-
-	modTime time.Time
 }
 
 func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err error) {
 	if q.ObjectID == "0" {
 		q.ObjectID = filesystem.RootID
 	}
-	r.modTime = s.modTime
 	ctx, cFunc := context.WithCancel(req.Context())
 	defer cFunc()
 	err = s.doBrowse(&r, q, ctx)
 	if err != nil {
 		return
 	}
-	if r.modTime.After(s.modTime) {
-		s.modTime = r.modTime
+	for _, o := range r.Result {
+		if o.ModTime().After(s.modTime) {
+			s.modTime = o.ModTime()
+		}
 	}
+	r.NumberReturned = uint32(len(r.Result))
 	r.XMLNS = q.XMLName.Space
 	r.UpdateID = s.updateID()
 	return
-}
-
-func (r *browseReply) AddResult(o *Object) {
-	r.Result.Append(o)
-	r.NumberReturned++
-	if o.ModTime().After(r.modTime) {
-		r.modTime = o.ModTime()
-	}
 }
 
 func (s *Service) doBrowse(r *browseReply, q browseQuery, ctx context.Context) error {
