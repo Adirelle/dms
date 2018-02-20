@@ -60,7 +60,7 @@ func (c *Cache) load(key interface{}) (res interface{}, ttl *time.Duration, err 
 	if getErr != nil {
 		res, ttl = getFailure{getErr}, &FailureTTL
 	} else {
-		res, ttl = getSuccess{obj}, &FailureTTL
+		res, ttl = getSuccess{obj}, &SuccessTTL
 	}
 	return
 }
