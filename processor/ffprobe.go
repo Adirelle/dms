@@ -19,14 +19,16 @@ type FFProbeProcessor struct {
 	binPath string
 	l       logging.Logger
 	cache   ffprobeCache
-	lock    sync.Locker
 }
 
 func NewFFProbeProcessor(path string, logger logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(path)
 	if err == nil {
-		p = &FFProbeProcessor{binPath: realPath, l: logger, lock: concurrencyLock(make(chan struct{}, 20))}
-		p.cache = ffprobeCache{gcache.New(1000).ARC().LoaderFunc(p.doProbe).Build()}
+		p = &FFProbeProcessor{binPath: realPath, l: logger}
+		p.cache = ffprobeCache{
+			gcache.New(1000).ARC().Expiration(time.Minute).LoaderFunc(p.doProbe).Build(),
+			concurrencyLock(make(chan struct{}, 20)),
+		}
 	}
 	return
 }
@@ -130,15 +132,24 @@ func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
 }
 
 func (p *FFProbeProcessor) probePath(path string) (ffprobeInfo, error) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
 	return p.cache.Get(path)
 }
 
-type ffprobeCache struct{ gcache.Cache }
+type ffprobeCache struct {
+	gcache.Cache
+	sync.Locker
+}
 
 func (c ffprobeCache) Get(path string) (ffprobeInfo, error) {
-	v, err := c.Cache.Get(path)
+	v, err := c.Cache.GetIFPresent(path)
+	if v != nil {
+		return v.(ffprobeInfo), nil
+	} else if err != gcache.KeyNotFoundError {
+		return ffprobeInfo{}, err
+	}
+	c.Lock()
+	defer c.Unlock()
+	v, err = c.Cache.Get(path)
 	return v.(ffprobeInfo), err
 }
 
