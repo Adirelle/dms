@@ -190,7 +190,7 @@ func (c *Container) HTTPService() suture.Service {
 		logger := c.Logger("http")
 		stdLogger, err := logger.StdLoggerAt(logging.ErrorLevel)
 		if err != nil {
-			c.Logger("container").Panic(err)
+			c.Logger("container").Fatalf("cannot initialize the http logger: %s", err)
 		}
 		server := http.Server{
 			Addr:     c.HTTP.String(),
@@ -262,7 +262,7 @@ func (c *Container) AccessLog() io.Writer {
 			var err error
 			c.accessLog, err = os.OpenFile(fpath, os.O_CREATE|os.O_APPEND, 0644)
 			if err != nil {
-				c.Logger("main").Errorf("cannot open access log file: %s", err)
+				c.Logger("main").Fatalf("cannot open access log file: %s", err)
 			}
 		}
 	}
@@ -359,11 +359,11 @@ func (c *Container) Filesystem() *filesystem.Filesystem {
 		var err error
 		c.fs, err = filesystem.New(c.Config.Config)
 		if err != nil {
-			c.Logger("container").Panic(err)
+			c.Logger("container").Fatalf("%s: %s", c.Config.Config.Root, err)
 		}
 		root, err := c.fs.Get(filesystem.RootID)
 		if err != nil {
-			c.Logger("container").Panic(err)
+			c.Logger("container").Fatalf("%s: %s", c.Config.Config.Root, err)
 		}
 		c.Logger("main").Infof("serving content from %s", root.FilePath)
 	}

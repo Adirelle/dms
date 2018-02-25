@@ -21,7 +21,10 @@ func init() {
 
 func isHiddenPath(path string) (hidden bool, err error) {
 	val, err := hiddenCache.Get(filepath.Clean(path))
-	return val.(bool), err
+	if err == nil {
+		hidden = val.(bool)
+	}
+	return
 }
 
 func doTestHiddenPath(key interface{}) (res interface{}, err error) {
