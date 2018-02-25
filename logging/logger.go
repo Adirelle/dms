@@ -2,6 +2,9 @@ package logging
 
 import (
 	"io"
+	"log"
+
+	"go.uber.org/zap/zapcore"
 
 	"go.uber.org/zap"
 )
@@ -45,7 +48,18 @@ type Logger interface {
 	Sync() error
 
 	Writer() io.WriteCloser
+	StdLoggerAt(zapcore.Level) (*log.Logger, error)
 }
+
+//===========================================================================
+const (
+	DebugLevel = zap.DebugLevel
+	InfoLevel  = zap.InfoLevel
+	WarnLevel  = zap.WarnLevel
+	ErrorLevel = zap.ErrorLevel
+	PanicLevel = zap.PanicLevel
+	FatalLevel = zap.FatalLevel
+)
 
 //===========================================================================
 // logger
@@ -71,6 +85,10 @@ func (l *logger) Sync() error {
 
 func (l *logger) Writer() io.WriteCloser {
 	return &writer{l}
+}
+
+func (l *logger) StdLoggerAt(level zapcore.Level) (*log.Logger, error) {
+	return zap.NewStdLogAt(l.SugaredLogger.Desugar(), level)
 }
 
 //===========================================================================

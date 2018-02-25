@@ -64,9 +64,9 @@ func main() {
 
 	ctn := Container{Config: config}
 
-	spv := ctn.Supervisor()
-
 	ctn.Logger("main").Infof("DMS #%s, build on %s", CommitRef, BuildDate)
+
+	spv := ctn.Supervisor()
 
 	spv.ServeBackground()
 	defer spv.Stop()
@@ -187,7 +187,17 @@ func (c *Container) Logger(name string) logging.Logger {
 func (c *Container) HTTPService() suture.Service {
 	if c.http == nil {
 		defer c.creating("HTTP Service")()
-		c.http = &httpService{http.Server{Addr: c.HTTP.String(), Handler: c.Router()}, c.Logger("http")}
+		logger := c.Logger("http")
+		stdLogger, err := logger.StdLoggerAt(logging.ErrorLevel)
+		if err != nil {
+			c.Logger("container").Panic(err)
+		}
+		server := http.Server{
+			Addr:     c.HTTP.String(),
+			Handler:  c.Router(),
+			ErrorLog: stdLogger,
+		}
+		c.http = &httpService{server, logger}
 	}
 	return c.http
 }
@@ -243,7 +253,7 @@ func (c *Container) SetupMiddlewares(r *mux.Router) {
 }
 
 func (c *Container) AccessLog() io.Writer {
-	if c.accessLog == nil {
+	if c.accessLog == nil && c.Config.AccessLog != "" {
 		defer c.creating("Access log")()
 		fpath := c.Config.AccessLog
 		if fpath == "-" {
@@ -351,6 +361,11 @@ func (c *Container) Filesystem() *filesystem.Filesystem {
 		if err != nil {
 			c.Logger("container").Panic(err)
 		}
+		root, err := c.fs.Get(filesystem.RootID)
+		if err != nil {
+			c.Logger("container").Panic(err)
+		}
+		c.Logger("main").Infof("serving content from %s", root.FilePath)
 	}
 	return c.fs
 }

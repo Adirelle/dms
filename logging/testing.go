@@ -1,9 +1,13 @@
 package logging
 
 import (
+	"errors"
 	"io"
 	"io/ioutil"
+	"log"
 	"testing"
+
+	"go.uber.org/zap/zapcore"
 )
 
 //===========================================================================
@@ -44,7 +48,10 @@ func (l *testingLogger) Named(string) Logger                { return l }
 func (l *testingLogger) With(...interface{}) Logger         { return l }
 func (l *testingLogger) Sync() error                        { return nil }
 func (l *testingLogger) Writer() io.WriteCloser             { return nopWriter{ioutil.Discard} }
-func (l *testingLogger) get(name string) Logger             { return l }
+
+func (l *testingLogger) StdLoggerAt(_ zapcore.Level) (*log.Logger, error) {
+	return nil, errors.New("Not implemented")
+}
 
 //===========================================================================
 // nopWriter
