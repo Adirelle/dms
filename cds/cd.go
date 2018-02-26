@@ -2,7 +2,6 @@ package cds
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"sync"
 
@@ -35,7 +34,6 @@ var FolderType = types.NewMIME("application/vnd.container")
 func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	fsObj, err := d.fs.Get(id)
 	if err != nil {
-		err = fmt.Errorf("error getting object %q: %s", id, err.Error())
 		return
 	}
 	obj, err = newObject(fsObj)

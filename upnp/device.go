@@ -161,9 +161,9 @@ func (d *device) AddService(s *Service) {
 }
 
 func (d *device) DDDLocation() (res *url.URL) {
-	res, err := d.router.Get(DDDRoute).URL()
+	res, err := d.router.Get(DDDRoute).URLPath()
 	if err != nil {
-		d.logger.DPanic("Could not build DDD URL: %s", err)
+		d.logger.DPanicf("could not build DDD URL: %s", err)
 	}
 	return
 }

@@ -4,10 +4,8 @@ package main
 //go:generate go generate assets/fs.go
 
 import (
-	"context"
 	"io"
 	"net/http"
-	"reflect"
 
 	"encoding/json"
 	"flag"
@@ -26,6 +24,7 @@ import (
 	"github.com/anacrolix/dms/assets"
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/filesystem"
+	dmsHttp "github.com/anacrolix/dms/http"
 	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/processor"
 	"github.com/anacrolix/dms/rest"
@@ -197,7 +196,7 @@ func (c *Container) HTTPService() suture.Service {
 			Handler:  c.Router(),
 			ErrorLog: stdLogger,
 		}
-		c.http = &httpService{server, logger}
+		c.http = &dmsHttp.Service{server, logger}
 	}
 	return c.http
 }
@@ -206,8 +205,8 @@ func (c *Container) Router() *mux.Router {
 	if c.router == nil {
 		defer c.creating("Router")()
 		c.router = mux.NewRouter()
-		c.SetupMiddlewares(c.router)
 		c.SetupRouting(c.router)
+		c.SetupMiddlewares(c.router)
 	}
 	return c.router
 }
@@ -216,8 +215,7 @@ func (c *Container) SetupRouting(r *mux.Router) {
 	defer c.creating("Routing")()
 
 	if c.Debug {
-		r.Methods("GET").Path("/debug/router").
-			HandlerFunc(c.debugRouter)
+		r.Methods("GET").Path("/debug/router").Handler(&dmsHttp.RouterDebug{r, c.Logger("router-debug")})
 	}
 
 	r.Methods("GET", "HEAD").PathPrefix("/icons/").
@@ -235,6 +233,10 @@ func (c *Container) SetupRouting(r *mux.Router) {
 
 func (c *Container) SetupMiddlewares(r *mux.Router) {
 	defer c.creating("Middleware")()
+
+	r.Use(logging.AddLogger(c.Logger("http.request")))
+	r.Use(dmsHttp.UniqueID)
+	r.Use(dmsHttp.DebugRequest)
 
 	accessLog := c.AccessLog()
 	if accessLog != nil {
@@ -280,10 +282,7 @@ func (c *Container) SSDPService() suture.Service {
 				Interfaces:     c.ValidInterfaces,
 				Server:         ServerToken,
 				Location: func(ip net.IP) string {
-					url := upnp.DDDLocation()
-					url.Scheme = "http"
-					url.Host = fmt.Sprintf("%s:%d", ip, c.HTTP.Port)
-					return url.String()
+					return fmt.Sprintf("http://%s:%d%s", ip, c.HTTP.Port, upnp.DDDLocation())
 				},
 				UUID:     upnp.UniqueDeviceName(),
 				Devices:  upnp.DeviceTypes(),
@@ -417,43 +416,6 @@ func (c *Container) Interfaces() ([]net.Interface, error) {
 	return []net.Interface{*iface}, nil
 }
 
-func (c *Container) debugRouter(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", `text/plain; encoding="UTf-8"`)
-	err := c.Router().Walk(func(r *mux.Route, _ *mux.Router, _ []*mux.Route) error {
-		fmt.Fprintln(w, "-")
-		if name := r.GetName(); name != "" {
-			fmt.Fprintf(w, "\tname: %s\n", r.GetName())
-		}
-		if err := r.GetError(); err != nil {
-			fmt.Fprintf(w, "\terror: %s\n", err)
-		}
-		if v, err := r.GetHostTemplate(); err == nil {
-			fmt.Fprintf(w, "\thostT: %s\n", v)
-		}
-		if v, err := r.GetMethods(); err == nil {
-			fmt.Fprintf(w, "\tmethods: %s\n", v)
-		}
-		if v, err := r.GetPathTemplate(); err == nil {
-			fmt.Fprintf(w, "\tpathT: %s\n", v)
-		}
-		if v, err := r.GetPathRegexp(); err == nil {
-			fmt.Fprintf(w, "\tpathR: %s\n", v)
-		}
-		if v, err := r.GetQueriesTemplates(); err == nil {
-			fmt.Fprintf(w, "\tqueryT: %s\n", v)
-		}
-		if v, err := r.GetQueriesRegexp(); err == nil {
-			fmt.Fprintf(w, "\tqueryR: %s\n", v)
-		}
-		fmt.Fprintf(w, "\thandler: %v\n", reflect.ValueOf(r.GetHandler()).String())
-		return nil
-	})
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		c.Logger("debug-router").Error(err)
-	}
-}
-
 const indent = "│  "
 
 func (c *Container) creating(what string) func() {
@@ -464,27 +426,4 @@ func (c *Container) creating(what string) func() {
 		l.Debugf("%s└─%s created", c.indent, what)
 		c.indent = c.indent[:len(c.indent)-len(indent)]
 	}
-}
-
-type httpService struct {
-	http.Server
-	logging.Logger
-}
-
-func (w *httpService) Serve() {
-	w.Infof("listening on %s", w.Addr)
-	err := w.ListenAndServe()
-	if err != nil && err != http.ErrServerClosed {
-		w.Error(err)
-	}
-}
-
-func (w *httpService) Stop() {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	err := w.Shutdown(ctx)
-	if err != nil {
-		w.Error(err)
-	}
-	w.Info("stopped")
 }

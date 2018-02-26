@@ -36,12 +36,12 @@ func (m *DirectoryMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	id := strings.TrimPrefix(r.URL.Path, m.PathPrefix)
 	obj, err := m.Directory.Get(id)
 	if err != nil {
-		m.L.Errorf("%s: %s", id, err)
 		if os.IsNotExist(err) {
 			http.Error(w, "Not found", http.StatusNotFound)
 		} else if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 		} else {
+			m.L.Errorf("%s: %s", id, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
