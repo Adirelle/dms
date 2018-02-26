@@ -2,6 +2,7 @@ package soap
 
 import (
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -15,21 +16,20 @@ var bufferPool = buffer.NewPool()
 // Server holds the action map and can serve SOAP through HTTP
 type Server struct {
 	actions map[xml.Name]Action
-	l       logging.Logger
 }
 
 // New creates an empty SOAP Server
-func New(l logging.Logger) *Server {
-	return &Server{make(map[xml.Name]Action), l}
+func New() *Server {
+	return &Server{make(map[xml.Name]Action)}
 }
 
 // RegisterAction adds a Handler for a given action
-func (s *Server) RegisterAction(name xml.Name, action Action) {
+func (s *Server) RegisterAction(name xml.Name, action Action) error {
 	if _, exist := s.actions[name]; exist {
-		s.l.DPanicf("action already registered: %s", name)
-		return
+		return fmt.Errorf("action already registered: %s", name)
 	}
 	s.actions[name] = action
+	return nil
 }
 
 var (
@@ -39,10 +39,11 @@ var (
 
 // ServeHTTP implements http.Handler
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	logger := logging.MustFromContext(r.Context())
 	res, err := s.serve(r)
 	if err != nil {
 		res = ConvertError("s:Server", err)
-		s.l.Warn(err.Error())
+		logger.Warn(err.Error())
 		err = nil
 	}
 
@@ -54,7 +55,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
-		s.l.Errorf("error marshalling SOAP response: %s", err.Error())
+		logger.Errorf("error marshalling SOAP response: %s", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -65,20 +66,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	n, err := w.Write(b.Bytes())
 	if err != nil {
-		s.l.Errorf("error sending response: %s", err.Error())
+		logger.Errorf("error sending response: %s", err.Error())
 	} else if n < l {
-		s.l.Errorf("short write: %s/%s", n, l)
+		logger.Errorf("short write: %s/%s", n, l)
 	}
 }
 
 func (s *Server) serve(r *http.Request) (res interface{}, err error) {
+	logger := logging.MustFromContext(r.Context())
 	env := envelope{}
 	payload := &(env.Body.Payload)
 	payload.actions = s.actions
 	if err = xml.NewDecoder(r.Body).Decode(&env); err == nil {
-		s.l.Debugf("query: %#v", payload.value)
+		logger.Debugf("query: %#v", payload.value)
 		res, err = payload.action.Handle(payload.value, r)
-		s.l.Debugf("response: %#v, err: %v", res, err)
+		logger.Debugf("response: %#v, err: %v", res, err)
 	} else {
 		err = ConvertError("s:Client", err)
 	}

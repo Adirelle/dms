@@ -1,7 +1,6 @@
 package soap
 
 import (
-	"encoding/xml"
 	"net/http"
 	"testing"
 )
@@ -14,7 +13,7 @@ func ActionFuncToTest(args TestArguments, r *http.Request) (TestReply, error) {
 }
 
 func TestActionFunc(t *testing.T) {
-	a := ActionFunc(xml.Name{"", "MyAction"}, ActionFuncToTest)
+	a := ActionFunc(ActionFuncToTest)
 	t.Logf("name=%s", a.Name())
 	t.Logf("emptyArg=%#v", a.EmptyArguments())
 

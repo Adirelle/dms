@@ -133,7 +133,11 @@ func (r *Responder) handle(sender *net.UDPAddr, req *http.Request) {
 	)
 
 	maxDelay := readMaxDelay(req.Header, log)
-	sts := r.resolveST(req.Header.Get("ST"))
+	sts, err := r.resolveST(req.Header.Get("ST"))
+	if err != nil {
+		log.Error(err)
+		return
+	}
 	if len(sts) == 0 {
 		log.Debugf("no notification types matching %q", req.Header.Get("ST"))
 		return
@@ -169,7 +173,12 @@ func (r *Responder) sendResponse(conn net.Conn, st string, maxDelay time.Duratio
 	case <-r.done:
 		return
 	}
-	_, err := r.writeResponse(conn, mustGetIP(conn.LocalAddr()), st)
+	ip, ok := getIP(conn.LocalAddr())
+	if !ok {
+		log.Warnf("could not get local IP for %s", ip)
+		return
+	}
+	_, err := r.writeResponse(conn, ip, st)
 	if err != nil {
 		log.Warnf("could not send: %s", err.Error())
 	} else {
@@ -195,19 +204,23 @@ func readMaxDelay(headers http.Header, log logging.Logger) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func (r *Responder) resolveST(st string) []string {
+func (r *Responder) resolveST(st string) (ret []string, err error) {
 	types := r.allTypes()
 	if st == "ssdp:all" {
-		return types
+		return types, nil
 	}
 	for _, t := range types {
-		for _, t2 := range upnp.ExpandTypes(t) {
+		urns, err := upnp.ExpandTypes(t)
+		if err != nil {
+			return nil, err
+		}
+		for _, t2 := range urns {
 			if t2 == st {
-				return []string{st}
+				return []string{st}, nil
 			}
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 const responseTpl = "HTTP/1.1 200 OK\r\n" +

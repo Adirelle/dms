@@ -1,7 +1,6 @@
 package ssdp
 
 import (
-	"fmt"
 	"net"
 	"time"
 
@@ -62,11 +61,4 @@ func getIP(v interface{}) (net.IP, bool) {
 		return addr.IP, true
 	}
 	return net.IP{}, false
-}
-
-func mustGetIP(v interface{}) net.IP {
-	if ip, ok := getIP(v); ok {
-		return ip
-	}
-	panic(fmt.Errorf("cannot work IP out of %#v", v))
 }

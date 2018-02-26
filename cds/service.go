@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/upnp"
 )
 
@@ -27,16 +26,14 @@ type Service struct {
 	directory ContentDirectory
 
 	upnp    *upnp.Service
-	l       logging.Logger
 	modTime time.Time
 }
 
 // New initializes a content-directory service
-func NewService(directory ContentDirectory, logger logging.Logger) *Service {
+func NewService(directory ContentDirectory) *Service {
 	s := &Service{
 		directory: directory,
-		upnp:      upnp.NewService(ServiceID, ServiceType, logger),
-		l:         logger,
+		upnp:      upnp.NewService(ServiceID, ServiceType),
 		modTime:   time.Now(),
 	}
 

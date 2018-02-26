@@ -130,7 +130,7 @@ func (b *TagBag) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
 
 type ResourceTag struct {
 	Name  string
-	Value string `xml:",chardata"`
+	Value string
 }
 
 func (t *ResourceTag) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {

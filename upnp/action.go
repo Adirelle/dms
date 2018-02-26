@@ -20,9 +20,13 @@ func (a *actionFunc) EmptyReturnValue() interface{} {
 	return reflect.Zero(a.returnType).Interface()
 }
 
-func ActionFunc(f interface{}) Action {
-	return &actionFunc{
-		Action:     soap.ActionFunc(f),
-		returnType: reflect.TypeOf(f).Out(0),
+func ActionFunc(f interface{}) (a Action, err error) {
+	soapAction, err := soap.ActionFunc(f)
+	if err == nil {
+		a = &actionFunc{
+			Action:     soapAction,
+			returnType: reflect.TypeOf(f).Out(0),
+		}
 	}
+	return
 }

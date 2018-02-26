@@ -2,7 +2,7 @@ package upnp
 
 import (
 	"encoding/xml"
-	"log"
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -48,11 +48,10 @@ type stateVariableDesc struct {
 }
 
 // NewService initializes a new Service
-func NewService(id, urn string, l logging.Logger) *Service {
+func NewService(id, urn string) *Service {
 	return &Service{
 		id:          id,
 		urn:         urn,
-		logger:      l,
 		actions:     make(map[string]Action),
 		varMap:      make(map[string]stateVariableDesc),
 		SpecVersion: specVersion{1, 0},
@@ -60,29 +59,41 @@ func NewService(id, urn string, l logging.Logger) *Service {
 }
 
 // AddAction adds a new action the service specs.
-// It panics if it already exists.
-func (s *Service) AddAction(name string, action Action) {
+func (s *Service) AddAction(name string, action Action) (err error) {
 	if _, exists := s.actions[name]; exists {
-		log.Panicf("Action %q already defined", name)
+		return fmt.Errorf("action %q already defined", name)
 	}
 	s.actions[name] = action
 	desc := actionDesc{Name: name}
-	s.describeArgumentsFrom(&desc, "in", action.EmptyArguments())
-	s.describeArgumentsFrom(&desc, "out", action.EmptyReturnValue())
+	err = s.describeArgumentsFrom(&desc, "in", action.EmptyArguments())
+	if err != nil {
+		return
+	}
+	err = s.describeArgumentsFrom(&desc, "out", action.EmptyReturnValue())
+	if err != nil {
+		return
+	}
 	s.ActionList = append(s.ActionList, desc)
+	return nil
 }
 
 // AddActionFunc converts the given function to an action and adds it to the service.
-// It panics if the action already exists or if the function cannot be converted (see soap.ActionFunc()).
-func (s *Service) AddActionFunc(name string, f interface{}) {
-	s.AddAction(name, ActionFunc(f))
+func (s *Service) AddActionFunc(name string, f interface{}) (err error) {
+	a, err := ActionFunc(f)
+	if err == nil {
+		err = s.AddAction(name, a)
+	}
+	return
 }
 
-func (s *Service) describeArgumentsFrom(desc *actionDesc, direction string, str interface{}) {
+func (s *Service) describeArgumentsFrom(desc *actionDesc, direction string, str interface{}) error {
 	refl := reflect.TypeOf(str)
 	for i := 0; i < refl.NumField(); i++ {
 		field := refl.Field(i)
-		varName := s.describeStateVar(field)
+		varName, err := s.describeStateVar(field)
+		if err != nil {
+			return err
+		}
 		if varName != "" {
 			desc.Arguments = append(desc.Arguments, argumentDesc{
 				Name:            findArgName(field),
@@ -91,6 +102,7 @@ func (s *Service) describeArgumentsFrom(desc *actionDesc, direction string, str 
 			})
 		}
 	}
+	return nil
 }
 
 func findArgName(f reflect.StructField) (name string) {
@@ -122,7 +134,7 @@ var upnpTypeMap = map[string]string{
 	"[]uint8":   "bin",
 }
 
-func (s *Service) describeStateVar(f reflect.StructField) (name string) {
+func (s *Service) describeStateVar(f reflect.StructField) (name string, err error) {
 	name = f.Name
 	parts := []string{"", "", ""}
 	if tag, ok := f.Tag.Lookup("statevar"); ok {
@@ -144,7 +156,8 @@ func (s *Service) describeStateVar(f reflect.StructField) (name string) {
 	} else if dt, ok := upnpTypeMap[f.Type.String()]; ok {
 		stateVar.DataType = dt
 	} else {
-		log.Panicf("cannot map type of field %s: %s", f.Name, f.Type.String())
+		err = fmt.Errorf("cannot map type of field %s: %s", f.Name, f.Type.String())
+		return
 	}
 	if parts[2] != "" {
 		values := strings.Split(parts[2], ",")

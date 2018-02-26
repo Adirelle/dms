@@ -2,7 +2,6 @@ package soap
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"reflect"
 )
@@ -16,17 +15,17 @@ type Action interface {
 // ActionFunc converts a function into an Action.
 // The function must conform to the func(A, *http.Request) (B, error) signature
 // where A and B are struct types.
-func ActionFunc(f interface{}) Action {
+func ActionFunc(f interface{}) (a Action, err error) {
 	v := reflect.ValueOf(f)
 	t := v.Type()
-	err := validateActionFuncType(t)
-	if err != nil {
-		log.Panicf("soap.ActionFunc(%#v): %s", f, err.Error())
+	err = validateActionFuncType(t)
+	if err == nil {
+		a = &actionFunc{
+			argType:   t.In(0),
+			funcValue: v,
+		}
 	}
-	return &actionFunc{
-		argType:   t.In(0),
-		funcValue: v,
-	}
+	return
 }
 
 var (

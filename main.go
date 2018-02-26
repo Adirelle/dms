@@ -282,7 +282,11 @@ func (c *Container) SSDPService() suture.Service {
 				Interfaces:     c.ValidInterfaces,
 				Server:         ServerToken,
 				Location: func(ip net.IP) string {
-					return fmt.Sprintf("http://%s:%d%s", ip, c.HTTP.Port, upnp.DDDLocation())
+					url, err := upnp.DDDLocation()
+					if err != nil {
+						panic(err)
+					}
+					return fmt.Sprintf("http://%s:%d%s", ip, c.HTTP.Port, url)
 				},
 				UUID:     upnp.UniqueDeviceName(),
 				Devices:  upnp.DeviceTypes(),
@@ -299,7 +303,7 @@ func (c *Container) SSDPService() suture.Service {
 func (c *Container) UPNP() upnp.Device {
 	if c.upnp == nil {
 		defer c.creating("UPNP Device")()
-		c.upnp = upnp.NewDevice(
+		svc, err := upnp.NewDevice(
 			upnp.DeviceSpec{
 				DeviceType:       DeviceType,
 				FriendlyName:     c.FriendlyName,
@@ -314,11 +318,17 @@ func (c *Container) UPNP() upnp.Device {
 				LastModified:     time.Unix(BuildDateUnixTS, 0),
 			},
 			c.Router(),
-			c.Logger("upnp-device"),
 		)
-		c.upnp.AddService(c.CDS().UPNPService())
-		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/md.png", 48, 48, 32})
-		c.upnp.AddIcon(upnp.Icon{"image/png", "/icons/lg.png", 128, 128, 32})
+		if err != nil {
+			c.Logger("container").Panic(err)
+		}
+		c.upnp = svc
+		err = svc.AddService(c.CDS().UPNPService())
+		if err != nil {
+			c.Logger("container").Panic(err)
+		}
+		svc.AddIcon(upnp.Icon{"image/png", "/icons/md.png", 48, 48, 32})
+		svc.AddIcon(upnp.Icon{"image/png", "/icons/lg.png", 128, 128, 32})
 	}
 	return c.upnp
 }
@@ -333,7 +343,7 @@ func (c *Container) UDN() string {
 func (c *Container) CDS() *cds.Service {
 	if c.cds == nil {
 		defer c.creating("ContentDirectoryService")()
-		c.cds = cds.NewService(c.ContentDirectory(), c.Logger("cds"))
+		c.cds = cds.NewService(c.ContentDirectory())
 	}
 	return c.cds
 }

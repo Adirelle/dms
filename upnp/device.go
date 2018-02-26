@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/xml"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"path"
@@ -15,7 +14,6 @@ import (
 
 	"go.uber.org/zap/buffer"
 
-	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/soap"
 	"github.com/gorilla/mux"
 )
@@ -29,9 +27,9 @@ const (
 
 type Device interface {
 	AddIcon(Icon)
-	AddService(*Service)
+	AddService(*Service) error
 
-	DDDLocation() *url.URL
+	DDDLocation() (*url.URL, error)
 	UniqueDeviceName() string
 	ConfigID() int32
 	DeviceTypes() []string
@@ -71,7 +69,6 @@ type device struct {
 
 	router *mux.Router
 	soap   *soap.Server
-	logger logging.Logger
 	sync.Mutex
 }
 
@@ -93,79 +90,81 @@ type serviceDesc struct {
 	service *Service
 }
 
-func must(err error) {
-	if err != nil {
-		log.Panic(err)
-	}
-}
-
-func NewDevice(spec DeviceSpec, router *mux.Router, logger logging.Logger) Device {
-
+func NewDevice(spec DeviceSpec, router *mux.Router) (ret Device, err error) {
 	dev := &device{
 		DeviceSpec: spec,
 		router:     router,
-		logger:     logger,
-		soap:       soap.New(logger),
+		soap:       soap.New(),
 	}
+	ret = dev
 
-	must(router.Methods("GET").
+	err = router.Methods("GET").
 		Path("/device.xml").
 		Name(DDDRoute).
 		HandlerFunc(dev.describeDevice).
-		GetError())
+		GetError()
+	if err != nil {
+		return
+	}
 
-	must(router.Methods("POST").
+	err = router.Methods("POST").
 		Path("/control").
 		HeadersRegexp("Content-Type", `(application|text)/(soap\+)?xml`).
 		Name(ControlRoute).
 		Handler(dev.soap).
-		GetError())
+		GetError()
+	if err != nil {
+		return
+	}
 
-	must(router.Methods("GET").
+	err = router.Methods("GET").
 		Path("/scpd/{service:[0-9]+}.xml").
 		Name(SCPDRoute).
 		HandlerFunc(dev.describeService).
-		GetError())
+		GetError()
 
-	return dev
+	return
 }
 
 func (d *device) AddIcon(icon Icon) {
 	d.Icons = append(d.Icons, icon)
 }
 
-func (d *device) AddService(s *Service) {
+func (d *device) AddService(s *Service) (err error) {
 	idx := len(d.Services)
-	desc := &serviceDesc{ID: s.id, URN: s.urn, service: s}
+	desc := &serviceDesc{ID: s.id, URN: s.urn, service: s, EventSubURL: "/sub"}
 	d.Services = append(d.Services, desc)
 
-	if url, err := d.router.Get(ControlRoute).URLPath(); err == nil {
-		desc.ControlURL = url.String()
-	} else {
-		d.logger.Errorf("cannot build control URL: %s", err)
+	url, err := d.router.Get(ControlRoute).URLPath()
+	if err != nil {
+		return
 	}
+	desc.ControlURL = url.String()
 
-	if url, err := d.router.Get(SCPDRoute).URLPath("service", strconv.Itoa(idx)); err == nil {
-		desc.SCPDURL = url.String()
-	} else {
-		d.logger.Errorf("cannot build SCPD URL: %s", err)
+	url, err = d.router.Get(SCPDRoute).URLPath("service", strconv.Itoa(idx))
+	if err != nil {
+		return
 	}
+	desc.SCPDURL = url.String()
 
-	desc.EventSubURL = "/sub"
-
-	for _, urn := range ExpandTypes(s.urn) {
+	urns, err := ExpandTypes(s.urn)
+	if err != nil {
+		return
+	}
+	for _, urn := range urns {
 		for name, action := range s.actions {
-			d.soap.RegisterAction(xml.Name{urn, name}, action)
+			err = d.soap.RegisterAction(xml.Name{urn, name}, action)
+			if err != nil {
+				return
+			}
 		}
 	}
+
+	return
 }
 
-func (d *device) DDDLocation() (res *url.URL) {
-	res, err := d.router.Get(DDDRoute).URLPath()
-	if err != nil {
-		d.logger.DPanicf("could not build DDD URL: %s", err)
-	}
-	return
+func (d *device) DDDLocation() (res *url.URL, err error) {
+	return d.router.Get(DDDRoute).URLPath()
 }
 
 func (d *device) UniqueDeviceName() string {
@@ -178,14 +177,14 @@ func (d *device) ConfigID() int32 {
 
 var versionedTypeRe = regexp.MustCompile(`^(urn:schemas-upnp-org:(?:service|device):[^:]+:)(\d+)$`)
 
-func ExpandTypes(t string) (ts []string) {
+func ExpandTypes(t string) (ts []string, err error) {
 	subs := versionedTypeRe.FindStringSubmatch(t)
 	if subs == nil {
-		return []string{t}
+		return []string{t}, nil
 	}
 	v, err := strconv.Atoi(subs[2])
 	if err != nil {
-		log.Panicf("cannot convert %q to int: %s", subs[2], err)
+		return
 	}
 	for ; v >= 1; v-- {
 		ts = append(ts, fmt.Sprintf("%s%d", subs[1], v))
@@ -233,7 +232,6 @@ func (d *device) serveXML(w http.ResponseWriter, r *http.Request, data interface
 		err = xml.NewEncoder(b).Encode(data)
 	}
 	if err != nil {
-		d.logger.Error(err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
