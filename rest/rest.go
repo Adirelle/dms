@@ -15,7 +15,6 @@ import (
 type Server struct {
 	Prefix    string
 	Directory cds.ContentDirectory
-	L         logging.Logger
 
 	negt *negotiator.Negotiator
 }
@@ -25,11 +24,10 @@ type response struct {
 	Children    []*cds.Object `xml:"children>child,omitempty" json:",omitempty"`
 }
 
-func New(prefix string, Directory cds.ContentDirectory, logger logging.Logger) *Server {
+func New(prefix string, Directory cds.ContentDirectory) *Server {
 	return &Server{
 		Prefix:    prefix,
 		Directory: Directory,
-		L:         logger,
 		negt: negotiator.New(
 			negotiator.NewJSONIndent2Spaces(),
 			negotiator.NewXMLIndent2Spaces(),
@@ -47,9 +45,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			return
 		}
-		s.L.Errorf("negotiation error: %s", err)
-	} else {
-		s.L.Errorf("building response error: %s", err)
 	}
 	if os.IsNotExist(err) {
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -66,6 +61,7 @@ func (s *Server) getResponse(id string, ctx context.Context) (data response, err
 	}
 	children, errs := cds.GetChildren(s.Directory, id, ctx)
 	open := true
+	logger := logging.MustFromContext(ctx)
 	var (
 		child *cds.Object
 		warn  error
@@ -80,7 +76,7 @@ func (s *Server) getResponse(id string, ctx context.Context) (data response, err
 			}
 		case warn, open = <-errs:
 			if open {
-				s.L.Warn(warn)
+				logger.Warn(warn)
 			}
 		}
 	}

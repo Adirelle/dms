@@ -222,7 +222,7 @@ func (c *Container) SetupRouting(r *mux.Router) {
 		Handler(http.FileServer(assets.FileSystem))
 
 	r.Methods("GET").PathPrefix("/rest/").
-		Handler(rest.New("/rest", c.ContentDirectory(), c.Logger("rest")))
+		Handler(rest.New("/rest", c.ContentDirectory()))
 
 	r.Methods("GET", "HEAD").PathPrefix("/files/").
 		Handler(c.FileServer())

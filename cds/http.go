@@ -28,7 +28,6 @@ type DirectoryMiddleware struct {
 	PathPrefix string
 	Directory  ContentDirectory
 	Handler    http.Handler
-	L          logging.Logger
 }
 
 // ServeHTTP parses and resolves the object ID and passes the object to the
@@ -41,7 +40,6 @@ func (m *DirectoryMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		} else if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
 		} else {
-			m.L.Errorf("%s: %s", id, err)
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 		return
@@ -75,7 +73,6 @@ func RequestDirectory(r *http.Request) (d ContentDirectory) {
 
 type FileServer struct {
 	DirectoryMiddleware
-	L logging.Logger
 }
 
 type FileServerResource struct {
@@ -88,9 +85,7 @@ func NewFileServer(directory ContentDirectory, pathPrefix string, logger logging
 		DirectoryMiddleware{
 			Directory:  directory,
 			PathPrefix: strings.TrimRight(pathPrefix, "/"),
-			L:          logger,
 		},
-		logger,
 	}
 	fs.Handler = http.HandlerFunc(fs.serveObjectContent)
 	return fs
@@ -100,7 +95,6 @@ func (s *FileServer) serveObjectContent(w http.ResponseWriter, r *http.Request) 
 	obj := RequestObject(r)
 	fh, err := os.Open(obj.FilePath)
 	if err != nil {
-		s.L.Errorf("%s: %s", obj.ID, err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
