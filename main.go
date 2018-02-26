@@ -246,6 +246,7 @@ func (c *Container) SetupMiddlewares(r *mux.Router) {
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Server", ServerToken)
+			w.Header().Set("Ext", "")
 			next.ServeHTTP(w, r)
 		})
 	})
