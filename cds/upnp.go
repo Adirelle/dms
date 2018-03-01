@@ -1,13 +1,15 @@
 package cds
 
 import (
-	"bytes"
 	"context"
 	"encoding/xml"
 	"net/http"
 	"time"
 
+	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
+	dmsHttp "github.com/anacrolix/dms/http"
+	"github.com/anacrolix/dms/logging"
 	"github.com/anacrolix/dms/upnp"
 )
 
@@ -25,28 +27,24 @@ const (
 type Service struct {
 	directory ContentDirectory
 
-	upnp    *upnp.Service
+	*upnp.Service
 	modTime time.Time
 }
 
 // New initializes a content-directory service
 func NewService(directory ContentDirectory) *Service {
 	s := &Service{
-		directory: directory,
-		upnp:      upnp.NewService(ServiceID, ServiceType),
-		modTime:   time.Now(),
+		directory,
+		upnp.NewService(ServiceID, ServiceType),
+		time.Now(),
 	}
 
-	s.upnp.AddActionFunc("Browse", s.Browse)
-	s.upnp.AddActionFunc("GetSystemUpdateID", s.GetSystemUpdateID)
-	s.upnp.AddActionFunc("GetSortCapabilities", s.GetSortCapabilities)
-	s.upnp.AddActionFunc("GetSearchCapabilities", s.GetSearchCapabilities)
+	s.AddActionFunc("Browse", s.Browse)
+	s.AddActionFunc("GetSystemUpdateID", s.GetSystemUpdateID)
+	s.AddActionFunc("GetSortCapabilities", s.GetSortCapabilities)
+	s.AddActionFunc("GetSearchCapabilities", s.GetSearchCapabilities)
 
 	return s
-}
-
-func (s *Service) UPNPService() *upnp.Service {
-	return s.upnp
 }
 
 func (s *Service) updateID() uint32 {
@@ -100,102 +98,92 @@ type browseQuery struct {
 type browseReply struct {
 	XMLName        xml.Name `xml:"u:BrowseResponse"`
 	XMLNS          string   `xml:"xmlns:u,attr"`
-	Result         DIDLLite `statevar:"A_ARG_TYPE_Result,string"`
+	Result         []byte   `statevar:"A_ARG_TYPE_Result,string"`
 	NumberReturned uint32   `statevar:"A_ARG_TYPE_Count"`
 	TotalMatches   uint32   `statevar:"A_ARG_TYPE_Count"`
 	UpdateID       uint32   `statevar:"A_ARG_TYPE_UpdateID"`
 }
 
 func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err error) {
-	if q.ObjectID == "0" {
-		q.ObjectID = filesystem.RootID
-	}
 	ctx, cFunc := context.WithCancel(req.Context())
 	defer cFunc()
-	err = s.doBrowse(&r, q, ctx)
+	var objs []*Object
+	objs, r.TotalMatches, err = s.doBrowse(q, ctx)
 	if err != nil {
 		return
 	}
-	for _, o := range r.Result {
+	urlGen := dmsHttp.URLGeneratorFromContext(ctx)
+	result := didl_lite.DIDLLite{}
+	for _, o := range objs {
 		if o.ModTime().After(s.modTime) {
 			s.modTime = o.ModTime()
 		}
+		if didl_obj, err := o.MarshalDIDLLite(urlGen); err == nil {
+			result.AddObjects(didl_obj)
+		} else {
+			logging.FromContext(req.Context()).Warn(err)
+		}
 	}
-	r.NumberReturned = uint32(len(r.Result))
+	r.Result, err = xml.Marshal(result)
+	if err != nil {
+		return
+	}
+	r.NumberReturned = uint32(len(objs))
 	r.XMLNS = q.XMLName.Space
 	r.UpdateID = s.updateID()
 	return
 }
 
-func (s *Service) doBrowse(r *browseReply, q browseQuery, ctx context.Context) error {
+func (s *Service) doBrowse(q browseQuery, ctx context.Context) ([]*Object, uint32, error) {
+	id, err := filesystem.ParseObjectID(q.ObjectID)
+	if err != nil {
+		return nil, 0, err
+	}
 	switch q.BrowseFlag {
 	case "BrowseMetadata":
-		return s.doBrowseMetadata(r, q, ctx)
+		return s.doBrowseMetadata(id, ctx)
 	case "BrowseDirectChildren":
-		return s.doBrowseDirectChildren(r, q, ctx)
-	default:
-		return upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
+		return s.doBrowseDirectChildren(id, q.StartingIndex, q.RequestedCount, ctx)
 	}
+	return nil, 0, upnp.Errorf(upnp.ArgumentValueInvalidErrorCode, "unhandled BrowseFlag: %q", q.BrowseFlag)
 }
 
-func (s *Service) doBrowseMetadata(r *browseReply, q browseQuery, ctx context.Context) (err error) {
-	obj, err := s.directory.Get(q.ObjectID)
+func (s *Service) doBrowseMetadata(id filesystem.ID, ctx context.Context) (objs []*Object, total uint32, err error) {
+	obj, err := s.directory.Get(id)
 	if err != nil {
 		return
 	}
-	r.TotalMatches = 1
-	r.Result.Append(obj)
-	return
+	return []*Object{obj}, 1, nil
 }
 
-func (s *Service) doBrowseDirectChildren(r *browseReply, q browseQuery, ctx context.Context) (err error) {
-	objs, errs := GetChildren(s.directory, q.ObjectID, ctx)
+func (s *Service) doBrowseDirectChildren(id filesystem.ID, start uint32, limit uint32, ctx context.Context) (objs []*Object, total uint32, err error) {
+	objChan, errChan := GetChildren(s.directory, id, ctx)
+	objs = make([]*Object, 0, len(objChan))
 	open := true
 	var obj *Object
 	for open && err == nil {
 		select {
 		case _, open = <-ctx.Done():
 			err = context.Canceled
-		case obj, open = <-objs:
+		case obj, open = <-objChan:
 			if open {
-				r.Result.Append(obj)
-				r.TotalMatches++
+				objs = append(objs, obj)
 			}
-		case err = <-errs:
+		case err = <-errChan:
 		}
 	}
 	if err != nil {
 		return
 	}
-	SortObjects(r.Result)
-	stoppingIndex := q.StartingIndex + q.RequestedCount
-	if q.RequestedCount == 0 || stoppingIndex > r.TotalMatches {
-		stoppingIndex = r.TotalMatches - q.StartingIndex
+	SortObjects(objs)
+	total = uint32(len(objs))
+	if start > total {
+		start = total
 	}
-	r.Result = r.Result[q.StartingIndex:stoppingIndex]
-	return nil
-}
-
-// Slice of Objects, that are double-encoded
-type DIDLLite []*Object
-
-func (d *DIDLLite) Append(obj *Object) {
-	*d = append(*d, obj)
-}
-
-func (d DIDLLite) MarshalXML(e *xml.Encoder, start xml.StartElement) (err error) {
-	b := bytes.Buffer{}
-	_, err = b.WriteString(`<DIDL-Lite xmlns="urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:upnp="urn:schemas-upnp-org:metadata-1-0/upnp/" xmlns:dlna="urn:schemas-dlna-org:device-1-0">`)
-	if err != nil {
-		return
+	end := start + limit
+	if limit == 0 || end > total {
+		end = total - start
 	}
-	err = xml.NewEncoder(&b).Encode([]*Object(d))
-	if err != nil {
-		return
-	}
-	_, err = b.WriteString(`</DIDL-Lite>`)
-	if err != nil {
-		return
-	}
-	return e.EncodeElement(b.Bytes(), start)
+	objs = objs[start:end]
+	return
 }

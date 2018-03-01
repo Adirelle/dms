@@ -3,6 +3,7 @@ package cds
 import (
 	"sort"
 
+	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
 )
 
@@ -19,7 +20,7 @@ type ProcessingDirectory struct {
 }
 
 // Get fetchs the Object from the underlying Directory and applies the processors to it
-func (d *ProcessingDirectory) Get(id string) (obj *Object, err error) {
+func (d *ProcessingDirectory) Get(id filesystem.ID) (obj *Object, err error) {
 	obj, err = d.ContentDirectory.Get(id)
 	if err != nil {
 		return

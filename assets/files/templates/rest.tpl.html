@@ -1,8 +1,10 @@
+{{- $url := .url -}}
+
 {{- define "IconURI" -}}
-    {{- with (.Tags.Get "upnp:albumArtURI") -}}
+    {{- with (index .Tags "upnp:albumArtURI") -}}
         {{- . -}}
     {{- else -}}
-        {{- with (.Tags.Get "upnp:icon") -}}
+        {{- with (index .Tags "upnp:icon") -}}
             {{- . -}}
         {{- end -}}
     {{- end -}}
@@ -53,22 +55,20 @@
                     <td>{{ $name }}</td>
                     <td colspan="2">{{ $value }}</td>
                 </tr>
-                {{- end }} {{- end }} {{- with .model.Object.Res }}
+                {{- end }} {{- end }} {{- with .model.Object.Resources }}
                 <tr>
                     <th colspan="3">Resources</th>
                 </tr>
                 {{- range . }}
                 <tr>
                     <td>
-                        <a href="{{ .URL }}">{{ .URL }}</a>
+                        <a href="{{ .URI }}">{{ .URI }}</a>
                     </td>
-                    <td class="text-right">{{ .Size }}</td>
-                    <td>
-                        type: {{ .MimeType.Value }}
-                        {{- range .Tags -}}
-                            <br/>{{ .Name }}: {{ .Value }}
+                    <td><ul>
+                        {{- range $name, $value := .Tags -}}
+                            <li>{{ $name }}: {{ printf "%s" $value }}</li>
                         {{- end -}}
-                    </td>
+                    </ul></td>
                 </tr>
                 {{- end }} {{- end }} {{- with .model.Children }}
                 <tr>
@@ -77,10 +77,8 @@
                 {{- range . }}
                 <tr>
                     <td>
-                        <a href="{{$base}}{{.ID}}">{{- template "Title" . -}}</a>
+                        <a href="{{ call $url "rest" "objectID" .ID }}">{{- template "Title" . -}}</a>
                     </td>
-                    <td class="text-right">{{if not .IsContainer }}{{.Size}}{{ end }}</td>
-                    <td class="text-right">{{.ModTime.Format "2006-02-01 15:04 MST"}}</td>
                 </tr>
                 {{- end }} {{- end }}
             </tbody>

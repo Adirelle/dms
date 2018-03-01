@@ -2,44 +2,44 @@ package rest
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/anacrolix/dms/cds"
+	"github.com/anacrolix/dms/didl_lite"
+	dmsHttp "github.com/anacrolix/dms/http"
 	"github.com/anacrolix/dms/logging"
 	"github.com/jchannon/negotiator"
 )
 
-type Server struct {
-	Prefix    string
-	Directory cds.ContentDirectory
+const RouteName = "rest"
 
+type Server struct {
+	cds.DirectoryHandler
 	negt *negotiator.Negotiator
 }
 
 type response struct {
-	*cds.Object `xml:",omitempty"`
-	Children    []*cds.Object `xml:"children>child,omitempty" json:",omitempty"`
+	didl_lite.Object `xml:",omitempty"`
+	Children         []didl_lite.Object `xml:"children>child,omitempty" json:",omitempty"`
 }
 
-func New(prefix string, Directory cds.ContentDirectory) *Server {
-	return &Server{
-		Prefix:    prefix,
-		Directory: Directory,
+func New(d cds.ContentDirectory) *Server {
+	s := &Server{
 		negt: negotiator.New(
 			negotiator.NewJSONIndent2Spaces(),
 			negotiator.NewXMLIndent2Spaces(),
-			htmlProcessor{prefix},
+			htmlProcessor{},
 		),
 	}
+	s.DirectoryHandler = cds.DirectoryHandler{d, s}
+	return s
 }
 
-func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s *Server) ServeObject(w http.ResponseWriter, r *http.Request, o *cds.Object) {
 	ctx, cFunc := context.WithCancel(r.Context())
 	defer cFunc()
-	data, err := s.getResponse(strings.TrimPrefix(r.URL.Path, s.Prefix), ctx)
+	data, err := s.getResponse(o, ctx)
 	if err == nil {
 		err = s.negt.Negotiate(w, r, data)
 		if err == nil {
@@ -53,33 +53,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) getResponse(id string, ctx context.Context) (data response, err error) {
-	data.Object, err = s.Directory.Get(id)
+func (s *Server) getResponse(o *cds.Object, ctx context.Context) (data response, err error) {
+	urlGen := dmsHttp.URLGeneratorFromContext(ctx)
+	data.Object, err = o.MarshalDIDLLite(urlGen)
 	if err != nil {
-		err = fmt.Errorf("error getting %q: %s", id, err.Error())
 		return
 	}
-	children, errs := cds.GetChildren(s.Directory, id, ctx)
-	open := true
+	children, errs := cds.GetChildren(s.Directory, o, ctx)
 	logger := logging.MustFromContext(ctx)
-	var (
-		child *cds.Object
-		warn  error
-	)
-	for open {
+	for true {
 		select {
-		case _, open = <-ctx.Done():
+		case <-ctx.Done():
 			err = context.Canceled
-		case child, open = <-children:
-			if open {
-				data.Children = append(data.Children, child)
+			return
+		case child, open := <-children:
+			if !open {
+				return
 			}
-		case warn, open = <-errs:
-			if open {
-				logger.Warn(warn)
+			if obj, err := child.MarshalDIDLLite(urlGen); err == nil {
+				data.Children = append(data.Children, obj)
+			} else {
+				logger.Warn(err)
 			}
+		case warn, open := <-errs:
+			if !open {
+				return
+			}
+			logger.Warn(warn)
 		}
 	}
-	cds.SortObjects(data.Children)
 	return
 }

@@ -218,13 +218,16 @@ func (c *Container) SetupRouting(r *mux.Router) {
 		r.Methods("GET").Path("/debug/router").Handler(&dmsHttp.RouterDebug{r, c.Logger("router-debug")})
 	}
 
-	r.Methods("GET", "HEAD").PathPrefix("/icons/").
+	r.Methods("GET", "HEAD").Path("/icons/" + processor.RouteIconTemplate + ".png").
+		Name(processor.IconRoute).
 		Handler(http.FileServer(assets.FileSystem))
 
-	r.Methods("GET").PathPrefix("/rest/").
-		Handler(rest.New("/rest", c.ContentDirectory()))
+	r.Methods("GET").Path("/rest" + cds.RouteObjectIDTemplate).
+		Name(rest.RouteName).
+		Handler(rest.New(c.ContentDirectory()))
 
-	r.Methods("GET", "HEAD").PathPrefix("/files/").
+	r.Methods("GET", "HEAD").Path("/files" + cds.RouteObjectIDTemplate).
+		Name(cds.FileServerRoute).
 		Handler(c.FileServer())
 
 	r.Methods("GET", "HEAD").Path("/").
@@ -237,6 +240,7 @@ func (c *Container) SetupMiddlewares(r *mux.Router) {
 	r.Use(logging.AddLogger(c.Logger("http.request")))
 	r.Use(dmsHttp.UniqueID)
 	r.Use(dmsHttp.DebugRequest)
+	r.Use(dmsHttp.AddURLGenerator(r))
 
 	accessLog := c.AccessLog()
 	if accessLog != nil {
@@ -323,7 +327,7 @@ func (c *Container) UPNP() upnp.Device {
 			c.Logger("container").Panic(err)
 		}
 		c.upnp = svc
-		err = svc.AddService(c.CDS().UPNPService())
+		err = svc.AddService(c.CDS().Service)
 		if err != nil {
 			c.Logger("container").Panic(err)
 		}
@@ -384,7 +388,7 @@ func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.Conten
 	defer c.creating("Processors")()
 
 	d.AddProcessor(100, c.FileServer())
-	d.AddProcessor(95, &processor.AlbumArtProcessor{cache, c.FileServer(), c.Logger("album-art")})
+	d.AddProcessor(95, &processor.AlbumArtProcessor{cache})
 	d.AddProcessor(90, &processor.BasicIconProcessor{})
 
 	l := c.Logger("ffprobe")
@@ -399,7 +403,7 @@ func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.Conten
 func (c *Container) FileServer() *cds.FileServer {
 	if c.fileserver == nil {
 		defer c.creating("FileServer")()
-		c.fileserver = cds.NewFileServer(c.ContentDirectory(), "/files", c.Logger("fileserver"))
+		c.fileserver = cds.NewFileServer(c.ContentDirectory())
 	}
 	return c.fileserver
 }

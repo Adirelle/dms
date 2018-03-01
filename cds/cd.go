@@ -15,7 +15,7 @@ const RootID = filesystem.RootID
 
 // ContentDirectory is the generic ContentDirectory interface (no s**t, sherlock !).
 type ContentDirectory interface {
-	Get(id string) (*Object, error)
+	Get(id filesystem.ID) (*Object, error)
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
@@ -31,7 +31,7 @@ func NewFilesystemContentDirectory(fs *filesystem.Filesystem, logger logging.Log
 
 var FolderType = types.NewMIME("application/vnd.container")
 
-func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
+func (d *FilesystemContentDirectory) Get(id filesystem.ID) (obj *Object, err error) {
 	fsObj, err := d.fs.Get(id)
 	if err != nil {
 		return
@@ -43,7 +43,7 @@ func (d *FilesystemContentDirectory) Get(id string) (obj *Object, err error) {
 	return
 }
 
-func GetChildren(d ContentDirectory, id string, ctx context.Context) (<-chan *Object, <-chan error) {
+func GetChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (<-chan *Object, <-chan error) {
 	ch := make(chan *Object)
 	errCh := make(chan error)
 	go func() {
@@ -61,7 +61,7 @@ func GetChildren(d ContentDirectory, id string, ctx context.Context) (<-chan *Ob
 		group := sync.WaitGroup{}
 		group.Add(len(childrenIDs))
 		for _, id := range childrenIDs {
-			go func(id string) {
+			go func(id filesystem.ID) {
 				defer group.Done()
 				if child, err := d.Get(id); err == nil {
 					select {

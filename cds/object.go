@@ -1,45 +1,36 @@
 package cds
 
 import (
-	"encoding/xml"
+	"encoding"
 	"fmt"
+	"strconv"
 	"strings"
 
+	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
+	"github.com/anacrolix/dms/http"
 	"github.com/h2non/filetype"
 	types "gopkg.in/h2non/filetype.v1/types"
 )
 
 type Object struct {
-	XMLName xml.Name
 	filesystem.Object
-	Restricted int        `xml:"restricted,attr"`
-	Title      string     `xml:"dc:title"`
-	Class      string     `xml:"upnp:class"`
-	Tags       TagBag     `xml:",any,omitempty"`
-	Res        []Resource `xml:"res,omitempty"`
+	Title     string
+	Tags      map[string]interface{}
+	Resources []Resource
 
-	mimeType types.MIME
+	MimeType types.MIME
 }
 
 func newObject(obj *filesystem.Object) (o *Object, err error) {
-	o = &Object{
-		Object:     *obj,
-		Restricted: 1,
-		Tags:       TagBag(make(map[string]string)),
-	}
-	if o.IsContainer() {
-		o.XMLName.Local = "container"
-	} else {
-		o.XMLName.Local = "item"
-	}
-	o.Title, o.mimeType, o.Class, err = guessMimeType(o)
+	o = &Object{Object: *obj, Tags: make(map[string]interface{})}
+	o.Title, o.MimeType, err = guessMimeType(o)
 	return
 }
 
-func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string, err error) {
+func guessMimeType(obj *Object) (title string, mimeType types.MIME, err error) {
 	if obj.IsContainer() {
-		return obj.Name(), FolderType, "object.container", nil
+		return obj.Name(), FolderType, nil
 	}
 	typ, err := filetype.MatchFile(obj.FilePath)
 	if err != nil {
@@ -47,92 +38,127 @@ func guessMimeType(obj *Object) (title string, mimeType types.MIME, class string
 		return
 	}
 	title = strings.TrimSuffix(obj.Name(), "."+typ.Extension)
-	class = "object.item"
 	mimeType = typ.MIME
-	switch mimeType.Type {
-	case "audio", "video", "image", "text":
-		class += "." + mimeType.Type + "Item"
-	}
 	return
 }
 
 func (o *Object) AddResource(rs ...Resource) {
 	for _, r := range rs {
-		r.object = o
+		r.Owner = o
 	}
-	o.Res = append(o.Res, rs...)
+	o.Resources = append(o.Resources, rs...)
 }
 
 func (o *Object) IsContainer() bool {
 	return o.IsDir()
 }
 
-func (o *Object) MimeType() types.MIME {
-	return o.mimeType
-}
+func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, err error) {
 
-type Resource struct {
-	XMLName      xml.Name      `xml:"res"`
-	ProtocolInfo string        `xml:"protocolInfo,attr"`
-	URL          string        `xml:",chardata"`
-	Size         uint64        `xml:"size,attr,omitempty"`
-	Tags         []ResourceTag `xml:",attr,omitempty"`
-	MimeType     types.MIME    `xml:"-"`
-	FilePath     string        `xml:"-"`
+	cm := didl_lite.Common{
+		ID:         o.ID.String(),
+		ParentID:   o.ParentID().String(),
+		Restricted: true,
+		Title:      o.Title,
+	}
 
-	object *Object
-}
-
-func (r *Resource) Object() *Object {
-	return r.object
-}
-
-func (r *Resource) SetTag(name, value string) {
-	for i, t := range r.Tags {
-		if t.Name == name {
-			r.Tags[i].Value = value
-			return
+	if o.Tags != nil {
+		for name, value := range o.Tags {
+			var repr string
+			repr, err = marshalValue(value, gen)
+			if err != nil {
+				return
+			}
+			cm.Tags.Set(name, repr)
 		}
 	}
-	r.Tags = append(r.Tags, ResourceTag{name, value})
-}
 
-type TagBag map[string]string
+	for _, r := range o.Resources {
+		var didlres didl_lite.Resource
+		didlres, err = r.MarshalDIDLLite(gen)
+		if err != nil {
+			return
+		}
+		cm.AddResources(didlres)
+	}
 
-func (b *TagBag) Set(name, value string) {
-	(*b)[name] = value
-}
+	if o.IsContainer() {
+		cm.Class = "object.container"
+		res = &didl_lite.Container{
+			Common:     cm,
+			ChildCount: uint(len(o.GetChildrenID())),
+		}
+	} else {
+		cm.Class = "object.item." + o.MimeType.Type + "Item"
+		res = &didl_lite.Item{Common: cm}
+	}
 
-func (b *TagBag) Get(name string) string {
-	return (*b)[name]
-}
-
-func (b *TagBag) Has(name string) (found bool) {
-	_, found = (*b)[name]
 	return
 }
 
-func (b *TagBag) Remove(name string) {
-	delete(*b, name)
+type Resource struct {
+	FilePath string
+	URL      *http.URLSpec
+	Size     uint64
+	Tags     map[string]interface{}
+	MimeType types.MIME
+	Owner    *Object
 }
 
-func (b *TagBag) MarshalXML(e *xml.Encoder, _ xml.StartElement) error {
-	for name, value := range *b {
-		if err := e.EncodeElement(
-			xml.CharData(value),
-			xml.StartElement{Name: xml.Name{Local: name}},
-		); err != nil {
-			return err
+func (r *Resource) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Resource, err error) {
+	url, err := gen.URL(r.URL)
+	if err != nil {
+		return
+	}
+	res = didl_lite.Resource{
+		ProtocolInfo: fmt.Sprintf("http-get:*:%s:*", r.MimeType.Value),
+		URI:          url,
+	}
+	res.SetTag(didl_lite.ResSize, strconv.FormatUint(r.Size, 10))
+	if r.Tags != nil {
+		for name, value := range r.Tags {
+			var repr string
+			repr, err = marshalValue(value, gen)
+			if err != nil {
+				break
+			}
+			res.SetTag(name, repr)
 		}
 	}
-	return nil
+	return
 }
 
-type ResourceTag struct {
-	Name  string
-	Value string
+func (r *Resource) SetTag(name string, value interface{}) {
+	if r.Tags == nil {
+		r.Tags = make(map[string]interface{})
+	}
+	r.Tags[name] = value
 }
 
-func (t *ResourceTag) MarshalXMLAttr(name xml.Name) (xml.Attr, error) {
-	return xml.Attr{xml.Name{Local: t.Name}, t.Value}, nil
+func marshalValue(data interface{}, gen http.URLGenerator) (string, error) {
+	switch value := data.(type) {
+	case *http.URLSpec:
+		if str, err := gen.URL(value); err == nil {
+			return str, nil
+		} else {
+			return "", err
+		}
+	case encoding.TextMarshaler:
+		if b, err := value.MarshalText(); err == nil {
+			return string(b), nil
+		} else {
+			return "", err
+		}
+	case fmt.Stringer:
+		return value.String(), nil
+	case string:
+		return value, nil
+	case []byte:
+		return string(value), nil
+	}
+	// switch reflect.ValueOf(data).Kind() {
+	// case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+	// 	return fmt.Sprintf("%d", data), nil
+	// }
+	return fmt.Sprintf("%v", data), nil
 }

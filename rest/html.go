@@ -11,13 +11,12 @@ import (
 	"go.uber.org/zap/buffer"
 
 	"github.com/anacrolix/dms/assets"
+	dmsHttp "github.com/anacrolix/dms/http"
 )
 
 var bufferPool = buffer.NewPool()
 
-type htmlProcessor struct {
-	Prefix string
-}
+type htmlProcessor struct{}
 
 func (h htmlProcessor) CanProcess(mediaRange string) bool {
 	return strings.EqualFold(mediaRange, "text/html") || strings.EqualFold(mediaRange, "application/xhtml+xml")
@@ -30,10 +29,17 @@ func (h htmlProcessor) Process(w http.ResponseWriter, req *http.Request, dataMod
 	}
 	b := bufferPool.Get()
 	defer b.Free()
-
+	urlGen := dmsHttp.URLGeneratorFromContext(req.Context())
 	err = tpl.Execute(b, map[string]interface{}{
-		"model":      dataModel,
-		"pathPrefix": h.Prefix,
+		"model":        dataModel,
+		"urlGenerator": urlGen,
+		"url": func(name string, params ...string) string {
+			url, err := urlGen.URL(dmsHttp.NewURLSpec(name, params...))
+			if err != nil {
+				panic(err)
+			}
+			return url
+		},
 	})
 	if err != nil {
 		return
@@ -51,5 +57,8 @@ func buildTemplate() (*template.Template, error) {
 	}
 	return template.
 		New("rest").
+		Funcs(map[string]interface{}{
+			"urlSpec": dmsHttp.NewURLSpec,
+		}).
 		Parse(string(tplContent))
 }

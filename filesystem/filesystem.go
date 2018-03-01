@@ -1,17 +1,10 @@
 package filesystem
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"path/filepath"
 )
-
-// RootID is the object identifier of the root of the filesystem
-const RootID = "/"
-
-// NullID represents the null value of object identifiers
-const NullID = "-1"
 
 // Config holds the configuration parameters
 type Config struct {
@@ -26,12 +19,11 @@ type Filesystem struct {
 
 // Object is an abstraction for a file or directory of the content directory
 type Object struct {
-	ID          string `xml:"id,attr"`
-	ParentID    string `xml:"parentID,attr"`
-	FilePath    string `xml:"-"`
-	os.FileInfo `xml:"-"`
+	ID
+	FilePath string
+	os.FileInfo
 
-	childrenID []string
+	childrenID []ID
 }
 
 // New creates a new Filesystem based on the passed configuration
@@ -43,13 +35,8 @@ func New(conf Config) (fs *Filesystem, err error) {
 	return
 }
 
-func (fs *Filesystem) Get(id string) (ret *Object, err error) {
-	id = path.Clean(id)
-	if !path.IsAbs(id) {
-		err = fmt.Errorf("Invalid object ID %q", id)
-		return
-	}
-	fp := filepath.Join(fs.c.Root, filepath.FromSlash(id))
+func (fs *Filesystem) Get(id ID) (ret *Object, err error) {
+	fp := filepath.Join(fs.c.Root, filepath.FromSlash(id.String()))
 	accept, err := fs.filter(fp)
 	if err == nil && !accept {
 		err = os.ErrNotExist
@@ -63,23 +50,14 @@ func (fs *Filesystem) Get(id string) (ret *Object, err error) {
 	if !fi.IsDir() && !fi.Mode().IsRegular() {
 		return nil, os.ErrNotExist
 	}
-	ret = &Object{
-		ID:       id,
-		FilePath: fp,
-		FileInfo: fi,
-	}
-	if ret.IsRoot() {
-		ret.ParentID = NullID
-	} else {
-		ret.ParentID = path.Dir(id)
-	}
+	ret = &Object{ID: id, FilePath: fp, FileInfo: fi}
 	if ret.IsDir() {
 		ret.childrenID, err = fs.readChildren(id, fp)
 	}
 	return
 }
 
-func (fs *Filesystem) readChildren(id, dir string) (ret []string, err error) {
+func (fs *Filesystem) readChildren(id ID, dir string) (ret []ID, err error) {
 	fh, err := os.Open(dir)
 	if err != nil {
 		return
@@ -89,14 +67,14 @@ func (fs *Filesystem) readChildren(id, dir string) (ret []string, err error) {
 	if err != nil {
 		return
 	}
-	ret = make([]string, 0, len(names))
+	ret = make([]ID, 0, len(names))
 	for _, name := range names {
 		childPath := path.Join(dir, name)
 		var accept bool
 		if accept, err = fs.filter(childPath); err != nil {
 			return
 		} else if accept {
-			ret = append(ret, path.Join(id, name))
+			ret = append(ret, id.ChildID(name))
 		}
 	}
 	return
@@ -117,11 +95,7 @@ func (fs *Filesystem) filter(path string) (accept bool, err error) {
 	return
 }
 
-func (o *Object) IsRoot() bool {
-	return o.ID == RootID
-}
-
-func (o *Object) GetChildrenID() []string {
+func (o *Object) GetChildrenID() []ID {
 	return o.childrenID
 }
 

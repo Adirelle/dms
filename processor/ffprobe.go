@@ -3,14 +3,13 @@ package processor
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
-	"math"
 	"os/exec"
 	"strconv"
 	"sync"
 	"time"
 
 	"github.com/anacrolix/dms/cds"
+	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/logging"
 	"github.com/bluele/gcache"
 )
@@ -34,33 +33,33 @@ func NewFFProbeProcessor(path string, logger logging.Logger) (p *FFProbeProcesso
 }
 
 func (p *FFProbeProcessor) Process(obj *cds.Object) {
-	mType := obj.MimeType().Type
+	mType := obj.MimeType.Type
 	if !(mType == "audio" || mType == "video" || mType == "image") {
 		return
 	}
 
 	group := sync.WaitGroup{}
-	group.Add(1 + len(obj.Res))
+	group.Add(1 + len(obj.Resources))
 
 	go func() {
 		defer group.Done()
 		p.probeObject(obj)
 	}()
 
-	for i := range obj.Res {
+	for i := range obj.Resources {
 		go func(res *cds.Resource) {
 			defer group.Done()
 			p.probeResource(mType, res)
-		}(&obj.Res[i])
+		}(&obj.Resources[i])
 	}
 
 	group.Wait()
 }
 
 var tagMap = map[string]string{
-	"artist": "upnp:artist",
-	"album":  "upnp:album",
-	"genre":  "upnp:genre",
+	"artist": didl_lite.TagArtist,
+	"album":  didl_lite.TagAlbum,
+	"genre":  didl_lite.TagGenre,
 }
 
 func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
@@ -76,13 +75,13 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
 	if createdStr, ok := info.Format.Tags["creation_time"]; ok {
 		created, err := time.Parse(time.RFC3339Nano, createdStr)
 		if err == nil {
-			obj.Tags.Set("upnp:date", created.Format(time.RFC3339))
+			obj.Tags[didl_lite.TagDate] = created.Format(time.RFC3339)
 		}
 	}
 
 	for tagName, attrName := range tagMap {
 		if value, ok := info.Format.Tags[tagName]; ok {
-			obj.Tags.Set(attrName, value)
+			obj.Tags[attrName] = value
 		}
 	}
 }
@@ -105,9 +104,10 @@ func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
 	}
 
 	if hasDuration {
-		res.SetTag("bitrate", info.Format.BitRate)
+		res.SetTag(didl_lite.ResBitrate, info.Format.BitRate)
 		if info.Format.Duration != 0.0 {
-			res.SetTag("duration", formatDuration(float64(info.Format.Duration)))
+			duration := float64(info.Format.Duration) * float64(time.Second)
+			res.SetTag(didl_lite.ResDuration, didl_lite.Duration(time.Duration(duration)))
 		}
 	}
 
@@ -116,16 +116,16 @@ func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
 		if hasVideo && s.CodecType == "video" && (!gotVideo || s.Disposition.Default == 1) {
 			gotVideo = true
 			if s.Width != 0 && s.Height != 0 {
-				res.SetTag("resolution", fmt.Sprintf("%dx%d", s.Width, s.Height))
+				res.SetTag(didl_lite.ResResolution, didl_lite.Resolution{s.Width, s.Height})
 			}
 		}
 		if hasAudio && s.CodecType == "audio" && (!gotAudio || s.Disposition.Default == 1) {
 			gotAudio = true
-			if s.SampleRate != "" {
-				res.SetTag("sampleFrequency", s.SampleRate)
+			if s.SampleRate != 0 {
+				res.SetTag(didl_lite.ResSampleFrequency, s.SampleRate)
 			}
 			if s.Channels != 0 {
-				res.SetTag("nrAudioChannels", strconv.Itoa(int(s.Channels)))
+				res.SetTag(didl_lite.ResNrAudioChannels, s.Channels)
 			}
 		}
 	}
@@ -179,12 +179,12 @@ type ffprobeInfo struct {
 }
 
 type ffprobeStream struct {
-	CodecName   string `json:"codec_name"`
-	CodecType   string `json:"codec_type"`
-	Width       uint   `json:"width"`
-	Height      uint   `json:"height"`
-	SampleRate  string `json:"sample_rate"`
-	Channels    uint   `json:"channels"`
+	CodecName   string        `json:"codec_name"`
+	CodecType   string        `json:"codec_type"`
+	Width       uint          `json:"width"`
+	Height      uint          `json:"height"`
+	SampleRate  integerString `json:"sample_rate"`
+	Channels    uint          `json:"channels"`
 	Disposition struct {
 		Default int `json:"default"`
 	} `json:"disposition"`
@@ -193,7 +193,7 @@ type ffprobeStream struct {
 type ffprobeFormat struct {
 	Duration floatString       `json:"duration"`
 	Size     integerString     `json:"size"`
-	BitRate  string            `json:"bit_rate"`
+	BitRate  integerString     `json:"bit_rate"`
 	Tags     map[string]string `json:"tags"`
 }
 
@@ -215,13 +215,6 @@ func (s *integerString) UnmarshalText(t []byte) (err error) {
 		(*s) = integerString(i)
 	}
 	return
-}
-
-func formatDuration(d float64) string {
-	h := uint64(d) / 3600
-	m := (uint64(d) / 60) % 60
-	s := math.Mod(d, 60.0)
-	return fmt.Sprintf("%d:%02d:%02.6f", h, m, s)
 }
 
 type concurrencyLock chan struct{}

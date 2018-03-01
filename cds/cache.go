@@ -3,6 +3,7 @@ package cds
 import (
 	"time"
 
+	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/logging"
 	"github.com/bluele/gcache"
 )
@@ -26,7 +27,7 @@ func NewCache(directory ContentDirectory, cbuilder *gcache.CacheBuilder, logger 
 	return c
 }
 
-func (c *Cache) Get(id string) (obj *Object, err error) {
+func (c *Cache) Get(id filesystem.ID) (obj *Object, err error) {
 	val, err := c.cache.Get(id)
 	if err != nil {
 		return
@@ -56,7 +57,7 @@ func (c *Cache) load(key interface{}) (res interface{}, ttl *time.Duration, err 
 			res, ttl = getFailure{err}, &FailureTTL
 		}
 	}()
-	obj, getErr := c.directory.Get(key.(string))
+	obj, getErr := c.directory.Get(key.(filesystem.ID))
 	if getErr != nil {
 		res, ttl = getFailure{getErr}, &FailureTTL
 	} else {
