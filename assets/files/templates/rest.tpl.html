@@ -25,64 +25,66 @@
     <title>{{ .model.Object.Title }} - DMS</title>
     <style>
         img.icon {
-            max-width: 1em;
-            max-height: 1em;
-            vertical-align: baseline;
-            margin: 0 0.5ex;
+            width: 3rem;
+            height: 3rem;
+            vertical-align: middle;
+            margin-right: 1ex;
         }
     </style>
     {{- $base := .pathPrefix }}
 </head>
 
 <body>
-    <div class="container">
-        <nav class="navbar navbar-expand-lg">
-            <ul class="navbar-nav mr-auto">
-                <li>
-                    <a class="navbar-brand" href="#">{{- template "Title" .model.Object -}}</a>
-                </li>
-            </ul>
-            <a class="navbar-brand d-none d-md-inline" href="https://github.com/anacrolix/dms">DMS</a>
-        </nav>
-        <table class="table table-striped table-sm">
-            <tbody>
-                {{- with .model.Object.Tags }}
-                <tr>
-                    <th colspan="3">Tags</th>
-                </tr>
-                {{- range $name, $value := . }}
-                <tr>
-                    <td>{{ $name }}</td>
-                    <td colspan="2">{{ $value }}</td>
-                </tr>
-                {{- end }} {{- end }} {{- with .model.Object.Resources }}
-                <tr>
-                    <th colspan="3">Resources</th>
-                </tr>
-                {{- range . }}
-                <tr>
-                    <td>
-                        <a href="{{ .URI }}">{{ .URI }}</a>
-                    </td>
-                    <td><ul>
-                        {{- range $name, $value := .Tags -}}
-                            <li>{{ $name }}: {{ printf "%s" $value }}</li>
-                        {{- end -}}
-                    </ul></td>
-                </tr>
-                {{- end }} {{- end }} {{- with .model.Children }}
-                <tr>
-                    <th colspan="3">Children</th>
-                </tr>
-                {{- range . }}
-                <tr>
-                    <td>
-                        <a href="{{ call $url "rest" "objectID" .ID }}">{{- template "Title" . -}}</a>
-                    </td>
-                </tr>
-                {{- end }} {{- end }}
-            </tbody>
-        </table>
+    <nav class="navbar navbar-expand-lg">
+        <ul class="navbar-nav mr-auto">
+            <li>
+                <a class="navbar-brand" href="#">{{- template "Title" .model.Object -}}</a>
+            </li>
+        </ul>
+        <a class="navbar-brand d-none d-md-inline" href="https://github.com/anacrolix/dms">DMS</a>
+    </nav>
+    <div class="m-2">
+        {{- with .model.Object.Tags }}
+            <div class="card bg-light mb-3">
+                <div class="card-header p-2">Tags</div>
+                <div class="card-body d-flex flex-wrap p-1">
+                    {{- range $name, $value := . }}
+                        <div class="col-3 border p-1">
+                            <div><b>{{ $name }}</b></div>
+                            <div>{{ $value }}</div>
+                        </div>
+                    {{- end -}}
+                </div>
+            </div>
+        {{- end }}
+        {{- with .model.Object.Resources }}
+            <div class="card bg-light mb-3">
+                <div class="card-header p-2">Resources</div>
+                <div class="card-body d-flex flex-wrap p-1">
+                    {{- range . }}
+                        <div class="col-3 border p-1">
+                            <div><a href="{{ .URI }}">{{ .URI }}</a></div>
+                            <div>{{ .ProtocolInfo }}</div>
+                            {{- range $name, $value := .Tags -}}
+                                <div><b>{{ $name }}</b> {{ printf "%s" $value }}</div>
+                            {{- end -}}
+                        </div>
+                    {{- end -}}
+                </div>
+            </div>
+        {{- end }}
+        {{- with .model.Children }}
+            <div class="card bg-light mb-3">
+                <div class="card-header p-2">Children</div>
+                <div class="card-body d-flex flex-wrap p-1">
+                    {{- range . }}
+                        <div class="col-3 border p-1">
+                            <a href="{{ call $url "rest" "objectID" .ID }}">{{- template "Title" . -}}</a>
+                        </div>
+                    {{- end -}}
+                </div>
+            </div>
+        {{- end -}}
     </div>
 </body>
 
