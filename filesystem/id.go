@@ -9,6 +9,7 @@ import (
 // ID is an "opaque" identifier for filesystem objects
 type ID interface {
 	fmt.Stringer
+	BaseName() string
 	IsRoot() bool
 	ParentID() ID
 	ChildID(name string) ID
@@ -25,6 +26,7 @@ const (
 type nullID string
 
 func (nullID) String() string    { return "-1" }
+func (nullID) BaseName() string  { return "" }
 func (nullID) IsRoot() bool      { return false }
 func (nullID) ParentID() ID      { return NullID }
 func (nullID) ChildID(string) ID { return NullID }
@@ -32,14 +34,16 @@ func (nullID) ChildID(string) ID { return NullID }
 type rootID string
 
 func (rootID) String() string         { return "/" }
+func (rootID) BaseName() string       { return "/" }
 func (rootID) IsRoot() bool           { return true }
 func (rootID) ParentID() ID           { return NullID }
 func (rootID) ChildID(name string) ID { return objID(path.Join("/", name)) }
 
 type objID string
 
-func (o objID) String() string { return string(o) }
-func (objID) IsRoot() bool     { return false }
+func (o objID) String() string   { return string(o) }
+func (o objID) BaseName() string { return path.Base(string(o)) }
+func (objID) IsRoot() bool       { return false }
 
 func (o objID) ParentID() ID {
 	p := path.Dir(string(o))
