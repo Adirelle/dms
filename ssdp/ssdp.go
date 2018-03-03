@@ -41,7 +41,9 @@ func (c *Config) allTypes() []string {
 	)
 }
 
-func New(c Config, l logging.Logger) suture.Service {
+type Service suture.Service
+
+func New(c Config, l logging.Logger) Service {
 	spv := suture.NewSimple("ssdp")
 	r := NewResponder(c, l.Named("responder"))
 	spv.Add(r)

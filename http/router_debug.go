@@ -7,14 +7,10 @@ import (
 
 	"go.uber.org/zap/buffer"
 
-	"github.com/anacrolix/dms/logging"
 	"github.com/gorilla/mux"
 )
 
-type RouterDebug struct {
-	*mux.Router
-	logging.Logger
-}
+type RouterDebug struct{ *mux.Router }
 
 type dumper struct {
 	*buffer.Buffer
@@ -28,7 +24,7 @@ func (d *RouterDebug) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	err := d.Walk(dumper{b}.dumpRoute)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		d.Error(err)
+		return
 	}
 	w.Header().Set("Content-Type", `text/plain; encoding="utf-8"`)
 	w.Write(b.Bytes())

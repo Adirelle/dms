@@ -10,6 +10,7 @@ import (
 )
 
 var (
+	CacheSize          = 10000
 	CacheLoaderTimeout = 5 * time.Second
 	CacheSuccessTTL    = time.Minute
 	CacheFailureTTL    = 10 * time.Second
@@ -20,11 +21,15 @@ type Cache struct {
 	cache gcache.Cache
 }
 
-func NewCache(d ContentDirectory, cbuilder *gcache.CacheBuilder, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, l logging.Logger) *Cache {
 	ctx := logging.WithLogger(context.Background(), l)
 	c := &Cache{
 		ContentDirectory: d,
-		cache:            cbuilder.LoaderExpireFunc(wrapLoader(d.Get, ctx)).Build(),
+		cache: gcache.
+			New(CacheSize).
+			ARC().
+			LoaderExpireFunc(wrapLoader(d.Get, ctx)).
+			Build(),
 	}
 	return c
 }
