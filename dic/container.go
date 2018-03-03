@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"reflect"
-	"sync"
 
 	"github.com/anacrolix/dms/logging"
 )
@@ -18,7 +17,6 @@ type Container interface {
 type BaseContainer struct {
 	Builder
 	instances map[Provider]*result
-	lk        sync.Mutex
 }
 
 func New() *BaseContainer {
@@ -48,14 +46,18 @@ func (c *BaseContainer) get(keys ...interface{}) (value reflect.Value, err error
 	if err != nil {
 		return
 	}
-	c.lk.Lock()
 	res, exists := c.instances[p]
 	if !exists {
-		res = deferred(func() (reflect.Value, error) { return c.Build(p, c) })
+		res = &result{}
 		c.instances[p] = res
+		res.Value, res.Err = c.Build(p, c)
 	}
-	c.lk.Unlock()
-	return res.Await()
+	return res.Value, res.Err
+}
+
+type result struct {
+	Value reflect.Value
+	Err   error
 }
 
 func (c *BaseContainer) findProviderFor(keys []interface{}) (Provider, error) {
@@ -75,26 +77,8 @@ func (e *UnknownError) Error() string {
 	return fmt.Sprintf("do not know how to build %v", e.Keys)
 }
 
-type result struct {
-	Value reflect.Value
-	Err   error
-	sync.RWMutex
 }
 
-func deferred(f func() (reflect.Value, error)) (r *result) {
-	r = &result{}
-	r.Lock()
-	go func() {
-		defer r.Unlock()
-		r.Value, r.Err = f()
-	}()
-	return
-}
-
-func (r *result) Await() (reflect.Value, error) {
-	r.RLock()
-	defer r.RUnlock()
-	return r.Value, r.Err
 }
 
 func (c *BaseContainer) RegisterConstants(pairs ...interface{}) {
