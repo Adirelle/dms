@@ -17,6 +17,7 @@ type Container interface {
 type BaseContainer struct {
 	Builder
 	instances map[Provider]*result
+	path      []Provider
 }
 
 func New() *BaseContainer {
@@ -46,12 +47,20 @@ func (c *BaseContainer) get(keys ...interface{}) (value reflect.Value, err error
 	if err != nil {
 		return
 	}
+	for i := len(c.path) - 1; i >= 0; i-- {
+		if c.path[i] == p {
+			err = &CircularRefError{c.path[i:]}
+			return
+		}
+	}
+	c.path = append(c.path, p)
 	res, exists := c.instances[p]
 	if !exists {
 		res = &result{}
 		c.instances[p] = res
 		res.Value, res.Err = c.Build(p, c)
 	}
+	c.path = c.path[:len(c.path)-1]
 	return res.Value, res.Err
 }
 
@@ -77,8 +86,12 @@ func (e *UnknownError) Error() string {
 	return fmt.Sprintf("do not know how to build %v", e.Keys)
 }
 
+type CircularRefError struct {
+	Providers []Provider
 }
 
+func (e *CircularRefError) Error() string {
+	return fmt.Sprintf("circular reference involving these providers: %v", e.Providers)
 }
 
 func (c *BaseContainer) RegisterConstants(pairs ...interface{}) {
