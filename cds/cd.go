@@ -3,6 +3,7 @@ package cds
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/anacrolix/dms/filesystem"
 )
@@ -14,6 +15,7 @@ const RootID = filesystem.RootID
 type ContentDirectory interface {
 	Get(filesystem.ID, context.Context) (*Object, error)
 	GetChildren(filesystem.ID, context.Context) ([]*Object, error)
+	LastModTime() time.Time
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
@@ -37,6 +39,10 @@ func (d *FilesystemContentDirectory) Get(id filesystem.ID, ctx context.Context) 
 
 func (d *FilesystemContentDirectory) GetChildren(id filesystem.ID, ctx context.Context) ([]*Object, error) {
 	return getChildren(d, id, ctx)
+}
+
+func (d *FilesystemContentDirectory) LastModTime() time.Time {
+	return d.FS.LastModTime()
 }
 
 func getChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (children []*Object, err error) {

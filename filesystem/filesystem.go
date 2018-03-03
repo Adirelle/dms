@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"time"
 )
 
 // Config holds the configuration parameters
@@ -14,7 +15,8 @@ type Config struct {
 
 // Filesystem is the main entry point
 type Filesystem struct {
-	c Config
+	root        string
+	lastModTime time.Time
 }
 
 // Object is an abstraction for a file or directory of the content directory
@@ -28,15 +30,19 @@ type Object struct {
 
 // New creates a new Filesystem based on the passed configuration
 func New(conf Config) (fs *Filesystem, err error) {
-	conf.Root, err = filepath.Abs(filepath.Clean(conf.Root))
+	root, err := filepath.Abs(filepath.Clean(conf.Root))
 	if err == nil {
-		fs = &Filesystem{conf}
+		fs = &Filesystem{root: root}
 	}
 	return
 }
 
+func (fs *Filesystem) LastModTime() time.Time {
+	return fs.lastModTime
+}
+
 func (fs *Filesystem) Get(id ID) (ret *Object, err error) {
-	fp := filepath.Join(fs.c.Root, filepath.FromSlash(id.String()))
+	fp := filepath.Join(fs.root, filepath.FromSlash(id.String()))
 	accept, err := fs.filter(fp)
 	if err == nil && !accept {
 		err = os.ErrNotExist
@@ -46,6 +52,9 @@ func (fs *Filesystem) Get(id ID) (ret *Object, err error) {
 	fi, err := os.Stat(fp)
 	if err != nil {
 		return
+	}
+	if fi.ModTime().After(fs.lastModTime) {
+		fs.lastModTime = fi.ModTime()
 	}
 	if !fi.IsDir() && !fi.Mode().IsRegular() {
 		return nil, os.ErrNotExist

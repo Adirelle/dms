@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"net/http"
-	"time"
 
 	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
@@ -25,10 +24,8 @@ const (
 
 // Service implements the Content Directory Service
 type Service struct {
-	directory ContentDirectory
-
+	ContentDirectory
 	*upnp.Service
-	modTime time.Time
 }
 
 // New initializes a content-directory service
@@ -36,7 +33,6 @@ func NewService(directory ContentDirectory) *Service {
 	s := &Service{
 		directory,
 		upnp.NewService(ServiceID, ServiceType),
-		time.Now(),
 	}
 
 	s.AddActionFunc("Browse", s.Browse)
@@ -48,7 +44,7 @@ func NewService(directory ContentDirectory) *Service {
 }
 
 func (s *Service) updateID() uint32 {
-	return uint32(s.modTime.Unix())
+	return uint32(s.LastModTime().Unix())
 }
 
 type empty struct {
@@ -115,9 +111,6 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err e
 	urlGen := dmsHttp.URLGeneratorFromContext(ctx)
 	result := didl_lite.DIDLLite{}
 	for _, o := range objs {
-		if o.ModTime().After(s.modTime) {
-			s.modTime = o.ModTime()
-		}
 		if didl_obj, err := o.MarshalDIDLLite(urlGen); err == nil {
 			result.AddObjects(didl_obj)
 		} else {
@@ -149,7 +142,7 @@ func (s *Service) doBrowse(q browseQuery, ctx context.Context) ([]*Object, uint3
 }
 
 func (s *Service) doBrowseMetadata(id filesystem.ID, ctx context.Context) (objs []*Object, total uint32, err error) {
-	obj, err := s.directory.Get(id, ctx)
+	obj, err := s.Get(id, ctx)
 	if err != nil {
 		return
 	}
@@ -157,7 +150,7 @@ func (s *Service) doBrowseMetadata(id filesystem.ID, ctx context.Context) (objs 
 }
 
 func (s *Service) doBrowseDirectChildren(id filesystem.ID, start uint32, limit uint32, ctx context.Context) (objs []*Object, total uint32, err error) {
-	objs, err = s.directory.GetChildren(id, ctx)
+	objs, err = s.GetChildren(id, ctx)
 	if err != nil {
 		return
 	}
