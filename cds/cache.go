@@ -16,14 +16,16 @@ var (
 )
 
 type Cache struct {
-	directory ContentDirectory
-	cache     gcache.Cache
-	l         logging.Logger
+	ContentDirectory
+	cache gcache.Cache
 }
 
-func NewCache(directory ContentDirectory, cbuilder *gcache.CacheBuilder, logger logging.Logger) *Cache {
-	c := &Cache{directory: directory, l: logger}
-	c.cache = cbuilder.LoaderExpireFunc(c.load).Build()
+func NewCache(d ContentDirectory, cbuilder *gcache.CacheBuilder, l logging.Logger) *Cache {
+	ctx := logging.WithLogger(context.Background(), l)
+	c := &Cache{
+		ContentDirectory: d,
+		cache:            cbuilder.LoaderExpireFunc(wrapLoader(d.Get, ctx)).Build(),
+	}
 	return c
 }
 
@@ -31,7 +33,7 @@ func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err err
 	ch := make(chan struct{})
 	go func() {
 		defer close(ch)
-		obj, err = c.get(id).Resolve()
+		obj, err = c.get(id)
 	}()
 	select {
 	case <-ch:
@@ -41,12 +43,12 @@ func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err err
 	return
 }
 
-func (c *Cache) get(id filesystem.ID) getResult {
+func (c *Cache) get(id filesystem.ID) (*Object, error) {
 	val, err := c.cache.Get(id)
 	if err != nil {
-		return getFailure{err}
+		return nil, err
 	}
-	return val.(getResult)
+	return val.(getResult).Resolve()
 }
 
 func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) (objs []*Object, err error) {
@@ -74,23 +76,24 @@ func (s getSuccess) Resolve() (*Object, error) {
 	return s.obj, nil
 }
 
-func (c *Cache) load(key interface{}) (res interface{}, ttl *time.Duration, err error) {
-	var ret getResult
-	defer func() {
-		if rec := logging.RecoverError(); rec != nil {
+func wrapLoader(loader func(filesystem.ID, context.Context) (*Object, error), ctx context.Context) func(interface{}) (interface{}, *time.Duration, error) {
+	return func(key interface{}) (res interface{}, ttl *time.Duration, err error) {
+		var ret getResult
+		defer func() {
+			if rec := logging.RecoverError(); rec != nil {
+				ret = getFailure{err}
+			}
+			res, ttl = ret, ret.TTL()
+		}()
+		local, cancel := context.WithTimeout(ctx, CacheLoaderTimeout)
+		defer cancel()
+		obj, err := loader(key.(filesystem.ID), local)
+		if err != nil {
 			ret = getFailure{err}
+		} else {
+			ret = getSuccess{obj}
 		}
-		res, ttl = ret, ret.TTL()
-	}()
-	ctx, _ := context.WithTimeout(
-		logging.WithLogger(context.Background(), c.l),
-		CacheLoaderTimeout,
-	)
-	obj, getErr := c.directory.Get(key.(filesystem.ID), ctx)
-	if getErr != nil {
-		ret = getFailure{getErr}
-	} else {
-		ret = getSuccess{obj}
+		err = nil
+		return ret, ret.TTL(), nil
 	}
-	return ret, ret.TTL(), nil
 }
