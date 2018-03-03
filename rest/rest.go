@@ -8,7 +8,6 @@ import (
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
 	dmsHttp "github.com/anacrolix/dms/http"
-	"github.com/anacrolix/dms/logging"
 	"github.com/jchannon/negotiator"
 )
 
@@ -59,28 +58,17 @@ func (s *Server) getResponse(o *cds.Object, ctx context.Context) (data response,
 	if err != nil {
 		return
 	}
-	children, errs := cds.GetChildren(s.Directory, o, ctx)
-	logger := logging.MustFromContext(ctx)
-	for true {
-		select {
-		case <-ctx.Done():
-			err = context.Canceled
+	children, err := s.Directory.GetChildren(o, ctx)
+	if err != nil {
+		return
+	}
+	for _, child := range children {
+		var obj didl_lite.Object
+		obj, err = child.MarshalDIDLLite(urlGen)
+		if err != nil {
 			return
-		case child, open := <-children:
-			if !open {
-				return
-			}
-			if obj, err := child.MarshalDIDLLite(urlGen); err == nil {
-				data.Children = append(data.Children, obj)
-			} else {
-				logger.Warn(err)
-			}
-		case warn, open := <-errs:
-			if !open {
-				return
-			}
-			logger.Warn(warn)
 		}
+		data.Children = append(data.Children, obj)
 	}
 	return
 }

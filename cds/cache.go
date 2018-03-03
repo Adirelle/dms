@@ -1,6 +1,7 @@
 package cds
 
 import (
+	"context"
 	"time"
 
 	"github.com/anacrolix/dms/filesystem"
@@ -8,8 +9,11 @@ import (
 	"github.com/bluele/gcache"
 )
 
-var SuccessTTL = time.Minute
-var FailureTTL = 10 * time.Second
+var (
+	CacheLoaderTimeout = 5 * time.Second
+	CacheSuccessTTL    = time.Minute
+	CacheFailureTTL    = 10 * time.Second
+)
 
 type Cache struct {
 	directory ContentDirectory
@@ -19,27 +23,44 @@ type Cache struct {
 
 func NewCache(directory ContentDirectory, cbuilder *gcache.CacheBuilder, logger logging.Logger) *Cache {
 	c := &Cache{directory: directory, l: logger}
-	c.cache = cbuilder.
-		LoaderExpireFunc(c.load).
-		AddedFunc(c.added).
-		EvictedFunc(c.evicted).
-		Build()
+	c.cache = cbuilder.LoaderExpireFunc(c.load).Build()
 	return c
 }
 
-func (c *Cache) Get(id filesystem.ID) (obj *Object, err error) {
+func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err error) {
+	ch := make(chan struct{})
+	go func() {
+		defer close(ch)
+		obj, err = c.get(id).Resolve()
+	}()
+	select {
+	case <-ch:
+	case <-ctx.Done():
+		err = ctx.Err()
+	}
+	return
+}
+
+func (c *Cache) get(id filesystem.ID) getResult {
 	val, err := c.cache.Get(id)
 	if err != nil {
-		return
+		return getFailure{err}
 	}
-	return val.(getResult).Resolve()
+	return val.(getResult)
+}
+
+func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) (objs []*Object, err error) {
+	return getChildren(c, id, ctx)
 }
 
 type getResult interface {
 	Resolve() (*Object, error)
+	TTL() *time.Duration
 }
 
 type getFailure struct{ err error }
+
+func (getFailure) TTL() *time.Duration { return &CacheFailureTTL }
 
 func (f getFailure) Resolve() (*Object, error) {
 	return nil, f.err
@@ -47,29 +68,29 @@ func (f getFailure) Resolve() (*Object, error) {
 
 type getSuccess struct{ obj *Object }
 
+func (getSuccess) TTL() *time.Duration { return &CacheSuccessTTL }
+
 func (s getSuccess) Resolve() (*Object, error) {
 	return s.obj, nil
 }
 
 func (c *Cache) load(key interface{}) (res interface{}, ttl *time.Duration, err error) {
+	var ret getResult
 	defer func() {
 		if rec := logging.RecoverError(); rec != nil {
-			res, ttl = getFailure{err}, &FailureTTL
+			ret = getFailure{err}
 		}
+		res, ttl = ret, ret.TTL()
 	}()
-	obj, getErr := c.directory.Get(key.(filesystem.ID))
+	ctx, _ := context.WithTimeout(
+		logging.WithLogger(context.Background(), c.l),
+		CacheLoaderTimeout,
+	)
+	obj, getErr := c.directory.Get(key.(filesystem.ID), ctx)
 	if getErr != nil {
-		res, ttl = getFailure{getErr}, &FailureTTL
+		ret = getFailure{getErr}
 	} else {
-		res, ttl = getSuccess{obj}, &SuccessTTL
+		ret = getSuccess{obj}
 	}
-	return
-}
-
-func (c *Cache) added(key interface{}, _ interface{}) {
-	c.l.Debugf("added %q", key)
-}
-
-func (c *Cache) evicted(key interface{}, _ interface{}) {
-	c.l.Debugf("evicted %q", key)
+	return ret, ret.TTL(), nil
 }

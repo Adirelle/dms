@@ -3,11 +3,8 @@ package cds
 import (
 	"context"
 	"sort"
-	"sync"
 
 	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/logging"
-	types "gopkg.in/h2non/filetype.v1/types"
 )
 
 // RootID is the identifier of the root of any ContentDirectory
@@ -15,74 +12,55 @@ const RootID = filesystem.RootID
 
 // ContentDirectory is the generic ContentDirectory interface (no s**t, sherlock !).
 type ContentDirectory interface {
-	Get(id filesystem.ID) (*Object, error)
+	Get(filesystem.ID, context.Context) (*Object, error)
+	GetChildren(filesystem.ID, context.Context) ([]*Object, error)
 }
 
 // FilesystemContentDirectory is a filesystem-based ContentDirectory with processors
 type FilesystemContentDirectory struct {
-	fs *filesystem.Filesystem
-	l  logging.Logger
+	FS *filesystem.Filesystem
 }
 
-// NewFilesystemContentDirectory creates FilesystemContentDirectory
-func NewFilesystemContentDirectory(fs *filesystem.Filesystem, logger logging.Logger) *FilesystemContentDirectory {
-	return &FilesystemContentDirectory{fs: fs, l: logger}
-}
-
-var FolderType = types.NewMIME("application/vnd.container")
-
-func (d *FilesystemContentDirectory) Get(id filesystem.ID) (obj *Object, err error) {
-	fsObj, err := d.fs.Get(id)
+func (d *FilesystemContentDirectory) Get(id filesystem.ID, ctx context.Context) (obj *Object, err error) {
+	select {
+	case <-ctx.Done():
+		err = ctx.Err()
+		return
+	default:
+	}
+	fsObj, err := d.FS.Get(id)
 	if err != nil {
 		return
 	}
-	obj, err = newObject(fsObj)
+	return newObject(fsObj)
+}
+
+func (d *FilesystemContentDirectory) GetChildren(id filesystem.ID, ctx context.Context) ([]*Object, error) {
+	return getChildren(d, id, ctx)
+}
+
+func getChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (children []*Object, err error) {
+	parent, err := d.Get(id, ctx)
 	if err != nil {
 		return
 	}
-	return
-}
-
-func GetChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (<-chan *Object, <-chan error) {
-	ch := make(chan *Object)
-	errCh := make(chan error)
-	go func() {
-		defer close(ch)
-		defer close(errCh)
-		obj, err := d.Get(id)
+	childrenIDs := parent.GetChildrenID()
+	for _, id := range childrenIDs {
+		var child *Object
+		child, err = d.Get(id, ctx)
 		if err != nil {
-			select {
-			case <-ctx.Done():
-			case errCh <- err:
-			}
 			return
 		}
-		childrenIDs := obj.GetChildrenID()
-		group := sync.WaitGroup{}
-		group.Add(len(childrenIDs))
-		for _, id := range childrenIDs {
-			go func(id filesystem.ID) {
-				defer group.Done()
-				if child, err := d.Get(id); err == nil {
-					select {
-					case <-ctx.Done():
-					case ch <- child:
-					}
-				} else {
-					select {
-					case <-ctx.Done():
-					case errCh <- err:
-					}
-				}
-			}(id)
+		children = append(children, child)
+		select {
+		case <-ctx.Done():
+			err = ctx.Err()
+			return
+		default:
 		}
-		group.Wait()
-	}()
-	return ch, errCh
-}
-
-func SortObjects(objs []*Object) {
-	sort.Sort(sortableObjectList(objs))
+	}
+	sort.Sort(sortableObjectList(children))
+	return
 }
 
 type sortableObjectList []*Object

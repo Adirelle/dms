@@ -16,18 +16,20 @@ func WithLogger(ctx context.Context, l Logger) context.Context {
 }
 
 // FromContext gets the Logger from the Context
-func FromContext(ctx context.Context) (logger Logger) {
-	logger, _ = ctx.Value(loggerKey).(Logger)
-	return
+func FromContext(ctx context.Context, def Logger) Logger {
+	if l, ok := ctx.Value(loggerKey).(Logger); ok {
+		return l
+	}
+	return def
 }
 
 // FromContext gets the Logger from the Context
-func MustFromContext(ctx context.Context) (logger Logger) {
-	logger = FromContext(ctx)
-	if logger == nil {
-		log.Panic("logging.FromContext on a Context without a logger !")
+func MustFromContext(ctx context.Context) Logger {
+	if l := FromContext(ctx, nil); l != nil {
+		return l
 	}
-	return
+	log.Panic("logging.FromContext on a Context without a logger !")
+	return nil
 }
 
 // AddLogger returns an HTTP middleware that injects the given logger to the request context

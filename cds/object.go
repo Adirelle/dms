@@ -13,6 +13,8 @@ import (
 	types "gopkg.in/h2non/filetype.v1/types"
 )
 
+var FolderType = types.NewMIME("application/vnd.container")
+
 type Object struct {
 	filesystem.Object
 	Title     string

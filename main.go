@@ -237,7 +237,7 @@ func (c *Container) SetupRouting(r *mux.Router) {
 func (c *Container) SetupMiddlewares(r *mux.Router) {
 	defer c.creating("Middleware")()
 
-	r.Use(logging.AddLogger(c.Logger("http.request")))
+	r.Use(logging.AddLogger(c.Logger("")))
 	r.Use(dmsHttp.UniqueID)
 	r.Use(dmsHttp.DebugRequest)
 	r.Use(dmsHttp.AddURLGenerator(r))
@@ -355,7 +355,7 @@ func (c *Container) CDS() *cds.Service {
 func (c *Container) ContentDirectory() cds.ContentDirectory {
 	if c.directory == nil {
 		defer c.creating("ContentDirectory")()
-		base := cds.NewFilesystemContentDirectory(c.Filesystem(), c.Logger("directory"))
+		base := &cds.FilesystemContentDirectory{c.Filesystem()}
 		processing := &cds.ProcessingDirectory{ContentDirectory: base, Logger: c.Logger("processing")}
 		c.directory = cds.NewCache(
 			processing,
@@ -388,12 +388,11 @@ func (c *Container) SetupProcessors(d *cds.ProcessingDirectory, cache cds.Conten
 	defer c.creating("Processors")()
 
 	d.AddProcessor(100, c.FileServer())
-	d.AddProcessor(95, &processor.AlbumArtProcessor{cache})
+	d.AddProcessor(95, processor.NewAlbumArtProcessor(c.Filesystem(), c.Logger("album-art")))
 	d.AddProcessor(90, &processor.BasicIconProcessor{})
 
 	l := c.Logger("ffprobe")
-	ffprober, err := processor.NewFFProbeProcessor("ffprobe", l)
-	if err == nil {
+	if ffprober, err := processor.NewFFProbeProcessor("ffprobe", l); err == nil {
 		d.AddProcessor(80, ffprober)
 	} else {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())

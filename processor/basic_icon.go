@@ -1,6 +1,8 @@
 package processor
 
 import (
+	"context"
+
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/http"
@@ -12,26 +14,23 @@ const (
 	RouteIconTemplate  = "{icon:.*}"
 )
 
-type BasicIconProcessor struct {
+type BasicIconProcessor struct{}
+
+func (BasicIconProcessor) String() string {
+	return "BasicIconProcessor"
 }
 
-func (b BasicIconProcessor) Process(obj *cds.Object) {
-	icon := b.guessIcon(obj)
-	if icon == "" {
-		icon = "file"
-	}
-	obj.Tags[didl_lite.TagIcon] = http.NewURLSpec(IconRoute, RouteIconParameter, icon)
+func (b BasicIconProcessor) Process(obj *cds.Object, _ context.Context) {
+	obj.Tags[didl_lite.TagIcon] = http.NewURLSpec(IconRoute, RouteIconParameter, b.guessIcon(obj))
 }
 
-func (v BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
+func (b BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
 	if obj.IsContainer() {
 		return "folder"
 	}
-	mType := obj.MimeType.Type
-	switch mType {
-	case "audio", "video", "image", "text":
-		return mType
-	default:
-		return "file"
+	t := obj.MimeType.Type
+	if t == "audio" || t == "video" || t == "image" || t == "text" {
+		return t
 	}
+	return "file"
 }

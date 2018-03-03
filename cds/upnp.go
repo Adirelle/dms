@@ -121,7 +121,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err e
 		if didl_obj, err := o.MarshalDIDLLite(urlGen); err == nil {
 			result.AddObjects(didl_obj)
 		} else {
-			logging.FromContext(req.Context()).Warn(err)
+			logging.MustFromContext(req.Context()).Warn(err)
 		}
 	}
 	r.Result, err = xml.Marshal(result)
@@ -149,7 +149,7 @@ func (s *Service) doBrowse(q browseQuery, ctx context.Context) ([]*Object, uint3
 }
 
 func (s *Service) doBrowseMetadata(id filesystem.ID, ctx context.Context) (objs []*Object, total uint32, err error) {
-	obj, err := s.directory.Get(id)
+	obj, err := s.directory.Get(id, ctx)
 	if err != nil {
 		return
 	}
@@ -157,25 +157,10 @@ func (s *Service) doBrowseMetadata(id filesystem.ID, ctx context.Context) (objs 
 }
 
 func (s *Service) doBrowseDirectChildren(id filesystem.ID, start uint32, limit uint32, ctx context.Context) (objs []*Object, total uint32, err error) {
-	objChan, errChan := GetChildren(s.directory, id, ctx)
-	objs = make([]*Object, 0, len(objChan))
-	open := true
-	var obj *Object
-	for open && err == nil {
-		select {
-		case _, open = <-ctx.Done():
-			err = context.Canceled
-		case obj, open = <-objChan:
-			if open {
-				objs = append(objs, obj)
-			}
-		case err = <-errChan:
-		}
-	}
+	objs, err = s.directory.GetChildren(id, ctx)
 	if err != nil {
 		return
 	}
-	SortObjects(objs)
 	total = uint32(len(objs))
 	if start > total {
 		start = total

@@ -2,6 +2,7 @@ package processor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os/exec"
 	"strconv"
@@ -14,46 +15,60 @@ import (
 	"github.com/bluele/gcache"
 )
 
+const (
+	FFProbeCacheSize = 10000
+	FFProbeCacheTTL  = time.Minute
+	FFProbeLimit     = 20
+)
+
 type FFProbeProcessor struct {
 	binPath string
 	l       logging.Logger
-	cache   ffprobeCache
+	cache   gcache.Cache
+	lk      sync.Locker
 }
 
-func NewFFProbeProcessor(path string, logger logging.Logger) (p *FFProbeProcessor, err error) {
+func (FFProbeProcessor) String() string {
+	return "FFProbeProcessor"
+}
+
+func NewFFProbeProcessor(path string, l logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(path)
-	if err == nil {
-		p = &FFProbeProcessor{binPath: realPath, l: logger}
-		p.cache = ffprobeCache{
-			gcache.New(1000).ARC().Expiration(time.Minute).LoaderFunc(p.doProbe).Build(),
-			concurrencyLock(make(chan struct{}, 20)),
-		}
+	if err != nil {
+		return
 	}
+	p = &FFProbeProcessor{binPath: realPath,
+		l:  l,
+		lk: concurrencyLock(make(chan struct{}, FFProbeLimit)),
+	}
+	p.cache = gcache.
+		New(FFProbeCacheSize).
+		ARC().
+		Expiration(FFProbeCacheTTL).
+		LoaderFunc(p.loader).
+		Build()
 	return
 }
 
-func (p *FFProbeProcessor) Process(obj *cds.Object) {
-	mType := obj.MimeType.Type
-	if !(mType == "audio" || mType == "video" || mType == "image") {
+func (p *FFProbeProcessor) Process(obj *cds.Object, ctx context.Context) {
+	t := obj.MimeType.Type
+	if !(t == "audio" || t == "video" || t == "image") {
 		return
 	}
 
-	group := sync.WaitGroup{}
-	group.Add(1 + len(obj.Resources))
+	l := logging.MustFromContext(ctx)
 
-	go func() {
-		defer group.Done()
-		p.probeObject(obj)
-	}()
-
-	for i := range obj.Resources {
-		go func(res *cds.Resource) {
-			defer group.Done()
-			p.probeResource(mType, res)
-		}(&obj.Resources[i])
+	if err := p.probeObject(obj, ctx); err != nil {
+		l.Error(err)
+		return
 	}
 
-	group.Wait()
+	for i := range obj.Resources {
+		if err := p.probeResource(&obj.Resources[i], ctx); err != nil {
+			l.Error(err)
+			return
+		}
+	}
 }
 
 var tagMap = map[string]string{
@@ -62,10 +77,10 @@ var tagMap = map[string]string{
 	"genre":  didl_lite.TagGenre,
 }
 
-func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
-	info, err := p.probePath(obj.FilePath)
+func (p *FFProbeProcessor) probeObject(obj *cds.Object, ctx context.Context) error {
+	info, err := p.probePath(obj.FilePath, ctx)
 	if err != nil {
-		return
+		return err
 	}
 
 	if title, ok := info.Format.Tags["title"]; ok {
@@ -74,9 +89,10 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
 
 	if createdStr, ok := info.Format.Tags["creation_time"]; ok {
 		created, err := time.Parse(time.RFC3339Nano, createdStr)
-		if err == nil {
-			obj.Tags[didl_lite.TagDate] = created.Format(time.RFC3339)
+		if err != nil {
+			return err
 		}
+		obj.Tags[didl_lite.TagDate] = created.Format(time.RFC3339)
 	}
 
 	for tagName, attrName := range tagMap {
@@ -84,12 +100,14 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object) {
 			obj.Tags[attrName] = value
 		}
 	}
+
+	return nil
 }
 
-func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
-	info, err := p.probePath(res.FilePath)
+func (p *FFProbeProcessor) probeResource(res *cds.Resource, ctx context.Context) error {
+	info, err := p.probePath(res.FilePath, ctx)
 	if err != nil {
-		return
+		return err
 	}
 
 	hasVideo, hasAudio, hasDuration := false, false, false
@@ -129,34 +147,37 @@ func (p *FFProbeProcessor) probeResource(mainType string, res *cds.Resource) {
 			}
 		}
 	}
+
+	return nil
 }
 
-func (p *FFProbeProcessor) probePath(path string) (ffprobeInfo, error) {
-	return p.cache.Get(path)
-}
-
-type ffprobeCache struct {
-	gcache.Cache
-	sync.Locker
-}
-
-func (c ffprobeCache) Get(path string) (ffprobeInfo, error) {
-	v, err := c.Cache.GetIFPresent(path)
-	if v != nil {
-		return v.(ffprobeInfo), nil
-	} else if err != gcache.KeyNotFoundError {
-		return ffprobeInfo{}, err
+func (p *FFProbeProcessor) probePath(path string, ctx context.Context) (info ffprobeInfo, err error) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		val, err := p.cache.Get(path)
+		if err == nil {
+			info = val.(ffprobeInfo)
+		}
+	}()
+	select {
+	case <-done:
+	case <-ctx.Done():
+		err = ctx.Err()
 	}
-	c.Lock()
-	defer c.Unlock()
-	v, err = c.Cache.Get(path)
-	return v.(ffprobeInfo), err
+	return
 }
 
-func (p *FFProbeProcessor) doProbe(path interface{}) (data interface{}, err error) {
-	cmd := exec.Command(p.binPath, "-i", path.(string), "-of", "json", "-v", "error", "-show_format", "-show_streams")
+func (p *FFProbeProcessor) loader(key interface{}) (value interface{}, err error) {
+	p.lk.Lock()
+	defer p.lk.Unlock()
 
-	p.l.Debugf("Running %v", cmd.Args)
+	filePath := key.(string)
+	l := p.l.With("path", filePath)
+
+	cmd := exec.Command(p.binPath, "-i", filePath, "-of", "json", "-v", "error", "-show_format", "-show_streams")
+
+	l.Debugf("running %v", cmd.Args)
 	output, err := cmd.Output()
 	if err != nil {
 		return
@@ -165,10 +186,9 @@ func (p *FFProbeProcessor) doProbe(path interface{}) (data interface{}, err erro
 	info := ffprobeInfo{}
 	err = json.NewDecoder(bytes.NewReader(output)).Decode(&info)
 	if err == nil {
-		data = info
-		p.l.Debugf("Result: %#v", info)
+		value = info
 	} else {
-		p.l.Errorf("error unmarshalling: %s\n%s", err.Error(), output)
+		l.Errorf("error unmarshalling: %s\n%s", err.Error(), output)
 	}
 	return
 }

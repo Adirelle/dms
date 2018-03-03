@@ -1,6 +1,7 @@
 package cds
 
 import (
+	"context"
 	"net/http"
 	"os"
 
@@ -45,13 +46,17 @@ func (h *DirectoryHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id, err := filesystem.ParseObjectID(vars[RouteObjectIDParameter])
 	var o *Object
 	if err == nil {
-		o, err = h.Directory.Get(id)
+		o, err = h.Directory.Get(id, r.Context())
 	}
 	if err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "Not found", http.StatusNotFound)
 		} else if os.IsPermission(err) {
 			http.Error(w, "Forbidden", http.StatusForbidden)
+		} else if err == context.Canceled {
+			http.Error(w, "Canceled", 499) // Nginx: 499 Client closed connection
+		} else if err == context.DeadlineExceeded {
+			http.Error(w, "Timeout", http.StatusServiceUnavailable)
 		} else {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
@@ -70,6 +75,10 @@ func NewFileServer(d ContentDirectory) *FileServer {
 	return fs
 }
 
+func (FileServer) String() string {
+	return "FileServer"
+}
+
 func (s *FileServer) ServeObject(w http.ResponseWriter, r *http.Request, obj *Object) {
 	fh, err := os.Open(obj.FilePath)
 	if err != nil {
@@ -81,10 +90,10 @@ func (s *FileServer) ServeObject(w http.ResponseWriter, r *http.Request, obj *Ob
 	http.ServeContent(w, r, obj.Name(), obj.ModTime(), fh)
 }
 
-func (s *FileServer) Process(obj *Object) {
+func (s *FileServer) Process(obj *Object, _ context.Context) {
 	if !obj.IsContainer() {
 		obj.AddResource(Resource{
-			URL:      FileServerURLSpec(obj),
+			URL:      FileServerURLSpec(obj.ID),
 			Size:     uint64(obj.Size()),
 			MimeType: obj.MimeType,
 			FilePath: obj.FilePath,
@@ -92,6 +101,6 @@ func (s *FileServer) Process(obj *Object) {
 	}
 }
 
-func FileServerURLSpec(obj *Object) *dmsHttp.URLSpec {
-	return dmsHttp.NewURLSpec(FileServerRoute, RouteObjectIDParameter, obj.ID.String())
+func FileServerURLSpec(id filesystem.ID) *dmsHttp.URLSpec {
+	return dmsHttp.NewURLSpec(FileServerRoute, RouteObjectIDParameter, id.String())
 }

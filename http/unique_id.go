@@ -21,7 +21,7 @@ func UniqueID(next http.Handler) http.Handler {
 		uniqueID := fmt.Sprintf("%08X", rand.Uint64())
 		w.Header().Set("X-UniqueID", uniqueID)
 		ctx := r.Context()
-		if logger := logging.FromContext(ctx); logger != nil {
+		if logger := logging.FromContext(ctx, nil); logger != nil {
 			ctx = logging.WithLogger(ctx, logger.With("uniqueID", uniqueID))
 		}
 		ctx = context.WithValue(ctx, uniqueIDKey, uniqueID)

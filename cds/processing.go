@@ -1,6 +1,7 @@
 package cds
 
 import (
+	"context"
 	"sort"
 
 	"github.com/anacrolix/dms/filesystem"
@@ -9,7 +10,7 @@ import (
 
 // Processor adds information to Object
 type Processor interface {
-	Process(*Object)
+	Process(*Object, context.Context)
 }
 
 // ProcessingDirectory uses processors to enrich the objects
@@ -20,17 +21,27 @@ type ProcessingDirectory struct {
 }
 
 // Get fetchs the Object from the underlying Directory and applies the processors to it
-func (d *ProcessingDirectory) Get(id filesystem.ID) (obj *Object, err error) {
-	obj, err = d.ContentDirectory.Get(id)
+func (d *ProcessingDirectory) Get(id filesystem.ID, ctx context.Context) (obj *Object, err error) {
+	obj, err = d.ContentDirectory.Get(id, ctx)
 	if err != nil {
 		return
 	}
+	l := logging.FromContext(ctx, d.Logger).Named("processor")
 	for _, proc := range d.processorList {
-		if err := logging.CatchPanic(func() { proc.Process(obj) }); err != nil {
-			d.Warn(err)
+		l.Debugf("Processing %s with %s", obj.ID, proc.Processor)
+		p := logging.CatchPanic(func() {
+			proc.Process(obj, ctx)
+		})
+		if p != nil {
+			l.Error(p)
 		}
 	}
 	return
+}
+
+// Get fetchs the Object from the underlying Directory and applies the processors to it
+func (d *ProcessingDirectory) GetChildren(id filesystem.ID, ctx context.Context) ([]*Object, error) {
+	return getChildren(d, id, ctx)
 }
 
 type processorList []processor
