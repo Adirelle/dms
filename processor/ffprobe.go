@@ -11,7 +11,7 @@ import (
 
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/bluele/gcache"
 )
 

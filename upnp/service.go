@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 )
 
 const (

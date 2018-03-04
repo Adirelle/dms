@@ -13,7 +13,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/anacrolix/dms/upnp"
 	"golang.org/x/net/ipv4"
 )

@@ -7,8 +7,8 @@ import (
 
 	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
-	dmsHttp "github.com/anacrolix/dms/http"
-	"github.com/anacrolix/dms/logging"
+	adi_http "github.com/Adirelle/go-libs/http"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/anacrolix/dms/upnp"
 )
 
@@ -108,7 +108,7 @@ func (s *Service) Browse(q browseQuery, req *http.Request) (r browseReply, err e
 	if err != nil {
 		return
 	}
-	urlGen := dmsHttp.URLGeneratorFromContext(ctx)
+	urlGen := adi_http.URLGeneratorFromContext(ctx)
 	result := didl_lite.DIDLLite{}
 	for _, o := range objs {
 		if didl_obj, err := o.MarshalDIDLLite(urlGen); err == nil {

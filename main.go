@@ -22,10 +22,10 @@ import (
 
 	"github.com/anacrolix/dms/assets"
 	"github.com/anacrolix/dms/cds"
-	"github.com/anacrolix/dms/dic"
+	"github.com/Adirelle/go-libs/dic"
 	"github.com/anacrolix/dms/filesystem"
-	dmsHttp "github.com/anacrolix/dms/http"
-	"github.com/anacrolix/dms/logging"
+	adi_http "github.com/Adirelle/go-libs/http"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/anacrolix/dms/processor"
 	"github.com/anacrolix/dms/rest"
 	"github.com/anacrolix/dms/ssdp"
@@ -183,16 +183,16 @@ type Container struct {
 
 type SSDPService suture.Service
 
-func (Container) Supervisor(f *logging.Factory, httpServer *dmsHttp.Service, ssdpServer ssdp.Service) *suture.Supervisor {
-	l := f.Get("supervisor")
+func (c *Container) Supervisor(httpServer *adi_http.Service, ssdpServer ssdp.Service) *suture.Supervisor {
+	l := c.logger("supervisor")
 	spv := suture.New("dms", suture.Spec{Log: func(m string) { l.Warn(m) }})
 	spv.Add(httpServer)
 	spv.Add(ssdpServer)
 	return spv
 }
 
-func (Container) HTTPService(c *Config, r *mux.Router, f *logging.Factory) *dmsHttp.Service {
-	l := f.Get("http")
+func (c *Container) HTTPService(r *mux.Router) *adi_http.Service {
+	l := c.logger("http")
 	stdLogger, err := l.StdLoggerAt(logging.ErrorLevel)
 	if err != nil {
 		f.Get("container").Fatalf("cannot initialize the http logger: %s", err)
@@ -202,7 +202,7 @@ func (Container) HTTPService(c *Config, r *mux.Router, f *logging.Factory) *dmsH
 		Handler:  r,
 		ErrorLog: stdLogger,
 	}
-	return &dmsHttp.Service{server, l}
+	return &adi_http.Service{server, l}
 }
 
 type AccessLog io.Writer
@@ -218,7 +218,7 @@ func (Container) Router(
 
 	if c.Debug {
 		err = r.Methods("GET").Path("/debug/router").
-			Handler(&dmsHttp.RouterDebug{r}).
+			Handler(&adi_http.RouterDebug{r}).
 			GetError()
 		if err != nil {
 			return
@@ -257,9 +257,9 @@ func (Container) Router(
 	}
 
 	r.Use(logging.AddLogger(f.Get("")))
-	r.Use(dmsHttp.UniqueID)
-	r.Use(dmsHttp.DebugRequest)
-	r.Use(dmsHttp.AddURLGenerator(r))
+	r.Use(adi_http.UniqueID)
+	r.Use(adi_http.DebugRequest)
+	r.Use(adi_http.AddURLGenerator(r))
 
 	if al != nil {
 		r.Use(func(next http.Handler) http.Handler {

@@ -8,8 +8,8 @@ import (
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
-	dmsHttp "github.com/anacrolix/dms/http"
-	"github.com/anacrolix/dms/logging"
+	adi_http "github.com/Adirelle/go-libs/http"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/bluele/gcache"
 )
 
@@ -54,7 +54,7 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
 
 	uri, err := a.cache.Get(parentID)
 	if uri != nil {
-		obj.Tags[didl_lite.TagAlbumArtURI] = uri.(*dmsHttp.URLSpec)
+		obj.Tags[didl_lite.TagAlbumArtURI] = uri.(*adi_http.URLSpec)
 	} else if err != nil {
 		logging.MustFromContext(ctx).Named("album-art").Warn(err)
 	}

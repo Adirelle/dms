@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap/buffer"
 
 	"github.com/anacrolix/dms/assets"
-	dmsHttp "github.com/anacrolix/dms/http"
+	adi_http "github.com/Adirelle/go-libs/http"
 )
 
 var bufferPool = buffer.NewPool()
@@ -29,12 +29,12 @@ func (h htmlProcessor) Process(w http.ResponseWriter, req *http.Request, dataMod
 	}
 	b := bufferPool.Get()
 	defer b.Free()
-	urlGen := dmsHttp.URLGeneratorFromContext(req.Context())
+	urlGen := adi_http.URLGeneratorFromContext(req.Context())
 	err = tpl.Execute(b, map[string]interface{}{
 		"model":        dataModel,
 		"urlGenerator": urlGen,
 		"url": func(name string, params ...string) string {
-			url, err := urlGen.URL(dmsHttp.NewURLSpec(name, params...))
+			url, err := urlGen.URL(adi_http.NewURLSpec(name, params...))
 			if err != nil {
 				panic(err)
 			}
@@ -58,7 +58,7 @@ func buildTemplate() (*template.Template, error) {
 	return template.
 		New("rest").
 		Funcs(map[string]interface{}{
-			"urlSpec": dmsHttp.NewURLSpec,
+			"urlSpec": adi_http.NewURLSpec,
 		}).
 		Parse(string(tplContent))
 }

@@ -5,7 +5,7 @@ import (
 	"sort"
 
 	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 )
 
 // Processor adds information to Object

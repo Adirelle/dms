@@ -7,7 +7,7 @@ import (
 
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
-	dmsHttp "github.com/anacrolix/dms/http"
+	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/jchannon/negotiator"
 )
 
@@ -53,7 +53,7 @@ func (s *Server) ServeObject(w http.ResponseWriter, r *http.Request, o *cds.Obje
 }
 
 func (s *Server) getResponse(o *cds.Object, ctx context.Context) (data response, err error) {
-	urlGen := dmsHttp.URLGeneratorFromContext(ctx)
+	urlGen := adi_http.URLGeneratorFromContext(ctx)
 	data.Object, err = o.MarshalDIDLLite(urlGen)
 	if err != nil {
 		return

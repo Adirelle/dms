@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/bluele/gcache"
 )
 

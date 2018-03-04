@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/anacrolix/dms/logging"
+	"github.com/Adirelle/go-libs/logging"
 )
 
 var sampleReq = `<?xml version="1.0" encoding="UTF-8"?>

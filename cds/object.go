@@ -8,7 +8,7 @@ import (
 
 	"github.com/anacrolix/dms/didl_lite"
 	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/http"
+	"github.com/Adirelle/go-libs/http"
 	"github.com/h2non/filetype"
 	types "gopkg.in/h2non/filetype.v1/types"
 )

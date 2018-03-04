@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/anacrolix/dms/filesystem"
-	dmsHttp "github.com/anacrolix/dms/http"
+	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/gorilla/mux"
 )
 
@@ -101,6 +101,6 @@ func (s *FileServer) Process(obj *Object, _ context.Context) {
 	}
 }
 
-func FileServerURLSpec(id filesystem.ID) *dmsHttp.URLSpec {
-	return dmsHttp.NewURLSpec(FileServerRoute, RouteObjectIDParameter, id.String())
+func FileServerURLSpec(id filesystem.ID) *adi_http.URLSpec {
+	return adi_http.NewURLSpec(FileServerRoute, RouteObjectIDParameter, id.String())
 }

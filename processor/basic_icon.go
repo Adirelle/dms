@@ -5,7 +5,7 @@ import (
 
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
-	"github.com/anacrolix/dms/http"
+	"github.com/Adirelle/go-libs/http"
 )
 
 const (
