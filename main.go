@@ -20,12 +20,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anacrolix/dms/assets"
-	"github.com/anacrolix/dms/cds"
 	"github.com/Adirelle/go-libs/dic"
-	"github.com/anacrolix/dms/filesystem"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
+	"github.com/anacrolix/dms/assets"
+	"github.com/anacrolix/dms/cds"
+	"github.com/anacrolix/dms/filesystem"
 	"github.com/anacrolix/dms/processor"
 	"github.com/anacrolix/dms/rest"
 	"github.com/anacrolix/dms/ssdp"
@@ -69,15 +69,23 @@ func main() {
 	l.Infof("DMS #%s, build on %s", CommitRef, BuildDate)
 
 	ctn := dic.New()
-	ctn.Mimic(Container{config, lf})
-	ctn.LogTo(lf.Get("container"))
+	inner := &Container{config, lf.Get("container"), lf}
 
-	v, err := ctn.Get("Supervisor")
+	ctnLogger, err := inner.Logger.StdLoggerAt(logging.DebugLevel)
 	if err != nil {
-		l.Fatalf("%v", err)
+		l.Fatal(err)
 	}
-	spv := v.(*suture.Supervisor)
+	ctn.LogTo(ctnLogger)
 
+	err = ctn.RegisterFrom(inner)
+	if err != nil {
+		l.Fatal(err)
+	}
+
+	var spv *suture.Supervisor
+	if err = ctn.Fetch(&spv); err != nil {
+		l.Fatal(err)
+	}
 	spv.ServeBackground()
 	defer spv.Stop()
 
@@ -178,7 +186,12 @@ func getDefaultFriendlyName() string {
 
 type Container struct {
 	Config        *Config
+	Logger        logging.Logger
 	LoggerFactory *logging.Factory
+}
+
+func (c *Container) logger(name string) logging.Logger {
+	return c.LoggerFactory.Get(name)
 }
 
 type SSDPService suture.Service
@@ -195,10 +208,10 @@ func (c *Container) HTTPService(r *mux.Router) *adi_http.Service {
 	l := c.logger("http")
 	stdLogger, err := l.StdLoggerAt(logging.ErrorLevel)
 	if err != nil {
-		f.Get("container").Fatalf("cannot initialize the http logger: %s", err)
+		c.logger("container").Fatalf("cannot initialize the http logger: %s", err)
 	}
 	server := http.Server{
-		Addr:     c.HTTP.String(),
+		Addr:     c.Config.HTTP.String(),
 		Handler:  r,
 		ErrorLog: stdLogger,
 	}
@@ -207,16 +220,14 @@ func (c *Container) HTTPService(r *mux.Router) *adi_http.Service {
 
 type AccessLog io.Writer
 
-func (Container) Router(
-	c *Config,
+func (c *Container) Router(
 	cd cds.ContentDirectory,
 	fserver *cds.FileServer,
-	f *logging.Factory,
 	al AccessLog,
 ) (r *mux.Router, err error) {
 	r = mux.NewRouter()
 
-	if c.Debug {
+	if c.Config.Debug {
 		err = r.Methods("GET").Path("/debug/router").
 			Handler(&adi_http.RouterDebug{r}).
 			GetError()
@@ -256,7 +267,7 @@ func (Container) Router(
 		return
 	}
 
-	r.Use(logging.AddLogger(f.Get("")))
+	r.Use(logging.AddLogger(c.logger("")))
 	r.Use(adi_http.UniqueID)
 	r.Use(adi_http.DebugRequest)
 	r.Use(adi_http.AddURLGenerator(r))
@@ -278,32 +289,32 @@ func (Container) Router(
 	return
 }
 
-func (Container) AccessLog(c *Config, f *logging.Factory) (al AccessLog) {
-	fpath := c.AccessLog
+func (c *Container) AccessLog() (al AccessLog) {
+	fpath := c.Config.AccessLog
 	if fpath == "-" {
 		al = os.Stdout
 	} else if fpath != "" {
 		var err error
 		al, err = os.OpenFile(fpath, os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
-			f.Get("main").Fatalf("cannot open access log file: %s", err)
+			c.Logger.Fatalf("cannot open access log file: %s", err)
 		}
 	}
 	return
 }
 
-func (Container) SSDPService(c *Config, f *logging.Factory, upnp upnp.Device) ssdp.Service {
+func (c *Container) SSDPService(upnp upnp.Device) ssdp.Service {
 	return ssdp.New(
 		ssdp.Config{
-			NotifyInterval: c.NotifyInterval,
-			Interfaces:     c.ValidInterfaces,
+			NotifyInterval: c.Config.NotifyInterval,
+			Interfaces:     c.Config.ValidInterfaces,
 			Server:         ServerToken,
 			Location: func(ip net.IP) string {
 				url, err := upnp.DDDLocation()
 				if err != nil {
 					panic(err)
 				}
-				return fmt.Sprintf("http://%s:%d%s", ip, c.HTTP.Port, url)
+				return fmt.Sprintf("http://%s:%d%s", ip, c.Config.HTTP.Port, url)
 			},
 			UUID:     upnp.UniqueDeviceName(),
 			Devices:  upnp.DeviceTypes(),
@@ -311,15 +322,15 @@ func (Container) SSDPService(c *Config, f *logging.Factory, upnp upnp.Device) ss
 			BootID:   int32(time.Now().Unix() & 0x3fff), // TODO find the right mask
 			ConfigID: upnp.ConfigID(),
 		},
-		f.Get("ssdp"),
+		c.logger("ssdp"),
 	)
 }
 
-func (Container) UPNP(c *Config, udn UDN, r *mux.Router, cdService *cds.Service) (dev upnp.Device, err error) {
+func (c *Container) UPNP(udn UDN, r *mux.Router, cdService *cds.Service) (dev upnp.Device, err error) {
 	dev, err = upnp.NewDevice(
 		upnp.DeviceSpec{
 			DeviceType:       DeviceType,
-			FriendlyName:     c.FriendlyName,
+			FriendlyName:     c.Config.FriendlyName,
 			Manufacturer:     Manufacturer,
 			ManufacturerURL:  ManufacturerURL,
 			ModelDescription: ModelDescription,
@@ -346,35 +357,35 @@ func (Container) UPNP(c *Config, udn UDN, r *mux.Router, cdService *cds.Service)
 
 type UDN string
 
-func (Container) UDN(c *Config) UDN {
-	return UDN(fmt.Sprintf("uuid:%s", uuid.NewV5(uuid.NamespaceX500, c.FriendlyName)))
+func (c *Container) UDN() UDN {
+	return UDN(fmt.Sprintf("uuid:%s", uuid.NewV5(uuid.NamespaceX500, c.Config.FriendlyName)))
 }
 
-func (Container) CDService(dir cds.ContentDirectory) *cds.Service {
+func (c *Container) CDService(dir cds.ContentDirectory) *cds.Service {
 	return cds.NewService(dir)
 }
 
-func (Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileServer {
+func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileServer {
 	return cds.NewFileServer(dir)
 }
 
-func (Container) ContentDirectory(dir *cds.ProcessingDirectory, f *logging.Factory) cds.ContentDirectory {
-	return cds.NewCache(dir, f.Get("cd-cache"))
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory) cds.ContentDirectory {
+	return cds.NewCache(dir, c.logger("cd-cache"))
 }
 
-func (Container) ProcessingDirectory(
+func (c *Container) ProcessingDirectory(
 	dir *cds.FilesystemContentDirectory,
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
 	f *logging.Factory,
 ) (d *cds.ProcessingDirectory) {
-	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: f.Get("processing")}
+	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
 	d.AddProcessor(100, fserver)
-	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, f.Get("album-art")))
+	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, c.logger("album-art")))
 	d.AddProcessor(90, &processor.BasicIconProcessor{})
 
-	l := f.Get("ffprobe")
+	l := c.logger("ffprobe")
 	if ffprober, err := processor.NewFFProbeProcessor("ffprobe", l); err == nil {
 		d.AddProcessor(80, ffprober)
 	} else {
@@ -384,12 +395,12 @@ func (Container) ProcessingDirectory(
 	return
 }
 
-func (Container) FilesystemContentDirectory(fs *filesystem.Filesystem) *cds.FilesystemContentDirectory {
+func (c *Container) FilesystemContentDirectory(fs *filesystem.Filesystem) *cds.FilesystemContentDirectory {
 	return &cds.FilesystemContentDirectory{fs}
 }
 
-func (Container) Filesystem(c *Config) (fs *filesystem.Filesystem, err error) {
-	fs, err = filesystem.New(c.Config)
+func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
+	fs, err = filesystem.New(c.Config.Config)
 	if err == nil {
 		_, err = fs.Get(filesystem.RootID)
 	}
