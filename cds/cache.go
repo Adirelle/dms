@@ -10,32 +10,21 @@ import (
 	"github.com/bluele/gcache"
 )
 
-const CacheLoaderTimeout = 5 * time.Second
-
-type CacheConfig struct {
-	Size       uint
-	SuccessTTL time.Duration
-	FailureTTL time.Duration
-}
+const LoaderTimeout = 5 * time.Second
 
 type Cache struct {
-	CacheConfig
 	ContentDirectory
 	cache gcache.Cache
 	ctx   context.Context
 }
 
-func NewCache(d ContentDirectory, conf CacheConfig, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, backend cache.MultiLoaderCache, l logging.Logger) *Cache {
 	c := &Cache{
-		CacheConfig:      conf,
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	c.cache = cache.CacheErrors(
-		gcache.New(int(conf.Size)).ARC(),
-		c.doGet,
-		conf.FailureTTL,
-	)
+	var key filesystem.ID
+	c.cache = backend.RegisterLoaderFunc(&key, c.doGet)
 	return c
 }
 
@@ -62,12 +51,9 @@ func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) (objs []*Obje
 	return getChildren(c, id, ctx)
 }
 
-func (c *Cache) doGet(key interface{}) (obj interface{}, ttl *time.Duration, err error) {
-	local, cancel := context.WithTimeout(c.ctx, CacheLoaderTimeout)
+func (c *Cache) doGet(key interface{}) (obj interface{}, err error) {
+	local, cancel := context.WithTimeout(c.ctx, LoaderTimeout)
 	defer cancel()
 	obj, err = c.ContentDirectory.Get(key.(filesystem.ID), local)
-	if err == nil {
-		ttl = &c.CacheConfig.SuccessTTL
-	}
 	return
 }

@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/anacrolix/dms/cache"
+
 	"github.com/Adirelle/go-libs/dic"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
@@ -58,14 +60,12 @@ func main() {
 		HTTP:           &net.TCPAddr{Port: 1338},
 		Logging:        logging.DefaultConfig(),
 		FFProbe: processor.FFProbeConfig{
-			BinPath:   "ffprobe",
-			CacheSize: 10000,
-			CacheTTL:  time.Minute,
-			Limit:     20,
+			BinPath: "ffprobe",
+			Limit:   20,
 		},
-		Cache: cds.CacheConfig{
+		Cache: cache.Config{
 			Size:       10000,
-			SuccessTTL: time.Minute,
+			Expiration: time.Minute,
 			FailureTTL: 10 * time.Second,
 		},
 	}
@@ -112,7 +112,7 @@ type Config struct {
 	NotifyInterval time.Duration
 	Debug          bool
 	FFProbe        processor.FFProbeConfig
-	Cache          cds.CacheConfig
+	Cache          cache.Config
 }
 
 func (c *Config) SetupFlags() {
@@ -377,8 +377,8 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory) cds.ContentDirectory {
-	return cds.NewCache(dir, c.Config.Cache, c.logger("cd-cache"))
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cache cache.MultiLoaderCache) cds.ContentDirectory {
+	return cds.NewCache(dir, cache, c.logger("cd-cache"))
 }
 
 func (c *Container) ProcessingDirectory(
@@ -400,14 +400,18 @@ func (c *Container) ProcessingDirectory(
 	return
 }
 
-func (c *Container) FFProbeProcessor() (p *processor.FFProbeProcessor) {
+func (c *Container) FFProbeProcessor(cache cache.MultiLoaderCache) (p *processor.FFProbeProcessor) {
 	l := c.logger("ffprobe")
-	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, l)
+	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, cache, l)
 	if err != nil {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())
 	}
 
 	return
+}
+
+func (c *Container) Cache() cache.MultiLoaderCache {
+	return c.Config.Cache.New()
 }
 
 func (c *Container) FilesystemContentDirectory(fs *filesystem.Filesystem) *cds.FilesystemContentDirectory {
