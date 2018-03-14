@@ -57,6 +57,17 @@ func main() {
 		NotifyInterval: 30 * time.Minute,
 		HTTP:           &net.TCPAddr{Port: 1338},
 		Logging:        logging.DefaultConfig(),
+		FFProbe: processor.FFProbeConfig{
+			BinPath:   "ffprobe",
+			CacheSize: 10000,
+			CacheTTL:  time.Minute,
+			Limit:     20,
+		},
+		Cache: cds.CacheConfig{
+			Size:       10000,
+			SuccessTTL: time.Minute,
+			FailureTTL: 10 * time.Second,
+		},
 	}
 
 	config.ParseArgs()
@@ -77,10 +88,7 @@ func main() {
 	}
 	ctn.LogTo(ctnLogger)
 
-	err = ctn.RegisterFrom(inner)
-	if err != nil {
-		l.Fatal(err)
-	}
+	ctn.RegisterFrom(inner)
 
 	var spv *suture.Supervisor
 	if err = ctn.Fetch(&spv); err != nil {
@@ -97,14 +105,14 @@ func main() {
 type Config struct {
 	FriendlyName string
 	filesystem.Config
-	Logging   logging.Config
-	Interface Interface
-	HTTP      *net.TCPAddr
-	AccessLog string
-	// FFprobeCachePath string
-	// NoProbe          bool
+	Logging        logging.Config
+	Interface      Interface
+	HTTP           *net.TCPAddr
+	AccessLog      string
 	NotifyInterval time.Duration
 	Debug          bool
+	FFProbe        processor.FFProbeConfig
+	Cache          cds.CacheConfig
 }
 
 func (c *Config) SetupFlags() {
@@ -370,14 +378,14 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 }
 
 func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory) cds.ContentDirectory {
-	return cds.NewCache(dir, c.logger("cd-cache"))
+	return cds.NewCache(dir, c.Config.Cache, c.logger("cd-cache"))
 }
 
 func (c *Container) ProcessingDirectory(
 	dir *cds.FilesystemContentDirectory,
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
-	f *logging.Factory,
+	ffprober *processor.FFProbeProcessor,
 ) (d *cds.ProcessingDirectory) {
 	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
@@ -385,10 +393,17 @@ func (c *Container) ProcessingDirectory(
 	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, c.logger("album-art")))
 	d.AddProcessor(90, &processor.BasicIconProcessor{})
 
-	l := c.logger("ffprobe")
-	if ffprober, err := processor.NewFFProbeProcessor("ffprobe", l); err == nil {
+	if ffprober != nil {
 		d.AddProcessor(80, ffprober)
-	} else {
+	}
+
+	return
+}
+
+func (c *Container) FFProbeProcessor() (p *processor.FFProbeProcessor) {
+	l := c.logger("ffprobe")
+	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, l)
+	if err != nil {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())
 	}
 

@@ -9,17 +9,19 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Adirelle/go-libs/logging"
 	"github.com/anacrolix/dms/cds"
 	"github.com/anacrolix/dms/didl_lite"
-	"github.com/Adirelle/go-libs/logging"
 	"github.com/bluele/gcache"
 )
 
-const (
-	FFProbeCacheSize = 10000
-	FFProbeCacheTTL  = time.Minute
-	FFProbeLimit     = 20
-)
+type FFProbeConfig struct {
+	Enable    bool
+	BinPath   string
+	CacheSize uint
+	CacheTTL  time.Duration
+	Limit     uint
+}
 
 type FFProbeProcessor struct {
 	binPath string
@@ -32,19 +34,19 @@ func (FFProbeProcessor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewFFProbeProcessor(path string, l logging.Logger) (p *FFProbeProcessor, err error) {
-	realPath, err := exec.LookPath(path)
+func NewFFProbeProcessor(c FFProbeConfig, l logging.Logger) (p *FFProbeProcessor, err error) {
+	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
 	}
 	p = &FFProbeProcessor{binPath: realPath,
 		l:  l,
-		lk: concurrencyLock(make(chan struct{}, FFProbeLimit)),
+		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
 	p.cache = gcache.
-		New(FFProbeCacheSize).
+		New(int(c.CacheSize)).
 		ARC().
-		Expiration(FFProbeCacheTTL).
+		Expiration(c.CacheTTL).
 		LoaderFunc(p.loader).
 		Build()
 	return
