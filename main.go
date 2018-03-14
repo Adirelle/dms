@@ -386,11 +386,12 @@ func (c *Container) ProcessingDirectory(
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
 	ffprober *processor.FFProbeProcessor,
+	cache cache.MultiLoaderCache,
 ) (d *cds.ProcessingDirectory) {
 	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
 	d.AddProcessor(100, fserver)
-	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, c.logger("album-art")))
+	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, cache, c.logger("album-art")))
 	d.AddProcessor(90, &processor.BasicIconProcessor{})
 
 	if ffprober != nil {
