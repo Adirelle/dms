@@ -238,7 +238,7 @@ func (c *Container) Router(
 
 	err = r.Methods("GET", "HEAD").Path("/icons/" + processor.RouteIconTemplate + ".png").
 		Name(processor.IconRoute).
-		Handler(iconer.Handler("/icons")).
+		Handler(http.StripPrefix("/icons", iconer.Handler())).
 		GetError()
 	if err != nil {
 		return

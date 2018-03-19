@@ -43,7 +43,7 @@ func (b BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
 	return "file"
 }
 
-func (b BasicIconProcessor) Handler(prefix string) http.Handler {
-	fs := &assetfs.AssetFS{icons.Asset, icons.AssetDir, icons.AssetInfo, prefix}
+func (b BasicIconProcessor) Handler() http.Handler {
+	fs := &assetfs.AssetFS{icons.Asset, icons.AssetDir, icons.AssetInfo, ""}
 	return http.FileServer(fs)
 }
