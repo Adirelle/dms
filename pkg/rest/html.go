@@ -10,9 +10,15 @@ import (
 
 	"go.uber.org/zap/buffer"
 
-	"github.com/anacrolix/dms/assets"
+	"github.com/Adirelle/dms/pkg/rest/templates"
 	adi_http "github.com/Adirelle/go-libs/http"
+
+	// go-bindata is used to generate templates/templates*.go
+	_ "github.com/jteeuwen/go-bindata"
 )
+
+//go:generate go-bindata -o templates/templates.go       -tags !debug -pkg templates -ignore .*\.go -prefix templates/ templates/...
+//go:generate go-bindata -o templates/templates_debug.go -tags debug  -pkg templates -ignore .*\.go -prefix templates/ templates/...
 
 var bufferPool = buffer.NewPool()
 
@@ -51,7 +57,7 @@ func (h htmlProcessor) Process(w http.ResponseWriter, req *http.Request, dataMod
 }
 
 func buildTemplate() (*template.Template, error) {
-	tplContent, err := assets.Asset("templates/rest.tpl.html")
+	tplContent, err := templates.Asset("rest.tpl.html")
 	if err != nil {
 		return nil, err
 	}

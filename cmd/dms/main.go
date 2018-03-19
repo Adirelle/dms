@@ -1,7 +1,7 @@
 package main
 
 //go:generate bash ./versionInfo.sh version.go
-//go:generate go generate assets/fs.go
+//go:generate go generate ../pkg/...
 
 import (
 	"encoding/json"
@@ -20,18 +20,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/anacrolix/dms/cache"
-
+	"github.com/Adirelle/dms/pkg/cds"
+	"github.com/Adirelle/dms/pkg/filesystem"
+	"github.com/Adirelle/dms/pkg/processor"
+	"github.com/Adirelle/dms/pkg/rest"
+	"github.com/Adirelle/dms/pkg/ssdp"
+	"github.com/Adirelle/dms/pkg/upnp"
 	"github.com/Adirelle/go-libs/dic"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/anacrolix/dms/assets"
-	"github.com/anacrolix/dms/cds"
-	"github.com/anacrolix/dms/filesystem"
-	"github.com/anacrolix/dms/processor"
-	"github.com/anacrolix/dms/rest"
-	"github.com/anacrolix/dms/ssdp"
-	"github.com/anacrolix/dms/upnp"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	uuid "github.com/satori/go.uuid"
@@ -62,11 +59,6 @@ func main() {
 		FFProbe: processor.FFProbeConfig{
 			BinPath: "ffprobe",
 			Limit:   20,
-		},
-		Cache: cache.Config{
-			Size:       10000,
-			Expiration: time.Minute,
-			FailureTTL: 10 * time.Second,
 		},
 	}
 
@@ -112,7 +104,6 @@ type Config struct {
 	NotifyInterval time.Duration
 	Debug          bool
 	FFProbe        processor.FFProbeConfig
-	Cache          cache.Config
 }
 
 func (c *Config) SetupFlags() {
@@ -231,6 +222,7 @@ type AccessLog io.Writer
 func (c *Container) Router(
 	cd cds.ContentDirectory,
 	fserver *cds.FileServer,
+	iconer *processor.BasicIconProcessor,
 	al AccessLog,
 ) (r *mux.Router, err error) {
 	r = mux.NewRouter()
@@ -246,7 +238,7 @@ func (c *Container) Router(
 
 	err = r.Methods("GET", "HEAD").Path("/icons/" + processor.RouteIconTemplate + ".png").
 		Name(processor.IconRoute).
-		Handler(http.FileServer(assets.FileSystem)).
+		Handler(iconer.Handler("/icons")).
 		GetError()
 	if err != nil {
 		return
@@ -377,8 +369,8 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cache cache.MultiLoaderCache) cds.ContentDirectory {
-	return cds.NewCache(dir, cache, c.logger("cd-cache"))
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory) cds.ContentDirectory {
+	return cds.NewCache(dir, c.logger("cd-cache"))
 }
 
 func (c *Container) ProcessingDirectory(
@@ -386,13 +378,13 @@ func (c *Container) ProcessingDirectory(
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
 	ffprober *processor.FFProbeProcessor,
-	cache cache.MultiLoaderCache,
+	iconer *processor.BasicIconProcessor,
 ) (d *cds.ProcessingDirectory) {
 	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
 	d.AddProcessor(100, fserver)
-	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, cache, c.logger("album-art")))
-	d.AddProcessor(90, &processor.BasicIconProcessor{})
+	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, c.logger("album-art")))
+	d.AddProcessor(90, iconer)
 
 	if ffprober != nil {
 		d.AddProcessor(80, ffprober)
@@ -401,9 +393,9 @@ func (c *Container) ProcessingDirectory(
 	return
 }
 
-func (c *Container) FFProbeProcessor(cache cache.MultiLoaderCache) (p *processor.FFProbeProcessor) {
+func (c *Container) FFProbeProcessor() (p *processor.FFProbeProcessor) {
 	l := c.logger("ffprobe")
-	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, cache, l)
+	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, l)
 	if err != nil {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())
 	}
@@ -411,8 +403,8 @@ func (c *Container) FFProbeProcessor(cache cache.MultiLoaderCache) (p *processor
 	return
 }
 
-func (c *Container) Cache() cache.MultiLoaderCache {
-	return c.Config.Cache.New()
+func (c *Container) BasicIconProcessor() *processor.BasicIconProcessor {
+	return &processor.BasicIconProcessor{}
 }
 
 func (c *Container) FilesystemContentDirectory(fs *filesystem.Filesystem) *cds.FilesystemContentDirectory {

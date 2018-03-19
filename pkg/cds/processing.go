@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/anacrolix/dms/filesystem"
+	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/go-libs/logging"
 )
 

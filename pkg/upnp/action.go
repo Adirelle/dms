@@ -3,7 +3,7 @@ package upnp
 import (
 	"reflect"
 
-	"github.com/anacrolix/dms/soap"
+	"github.com/Adirelle/dms/pkg/soap"
 )
 
 type Action interface {

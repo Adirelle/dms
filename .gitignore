@@ -16,6 +16,3 @@
 
 # Visual Code configuration
 .vscode
-
-# Generated files
-/version.go

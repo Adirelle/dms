@@ -5,11 +5,11 @@ import (
 	"encoding/xml"
 	"net/http"
 
-	"github.com/anacrolix/dms/didl_lite"
-	"github.com/anacrolix/dms/filesystem"
+	"github.com/Adirelle/dms/pkg/didl_lite"
+	"github.com/Adirelle/dms/pkg/filesystem"
+	"github.com/Adirelle/dms/pkg/upnp"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/anacrolix/dms/upnp"
 )
 
 const (

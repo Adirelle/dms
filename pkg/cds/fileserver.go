@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/anacrolix/dms/filesystem"
+	"github.com/Adirelle/dms/pkg/filesystem"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/gorilla/mux"
 )

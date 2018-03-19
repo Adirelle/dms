@@ -14,7 +14,7 @@ import (
 
 	"go.uber.org/zap/buffer"
 
-	"github.com/anacrolix/dms/soap"
+	"github.com/Adirelle/dms/pkg/soap"
 	"github.com/gorilla/mux"
 )
 

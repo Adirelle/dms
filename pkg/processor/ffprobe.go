@@ -9,11 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Adirelle/dms/pkg/cds"
+	"github.com/Adirelle/dms/pkg/didl_lite"
+	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/anacrolix/dms/cache"
-	"github.com/anacrolix/dms/cds"
-	"github.com/anacrolix/dms/didl_lite"
-	"github.com/bluele/gcache"
 )
 
 type FFProbeConfig struct {
@@ -24,17 +23,15 @@ type FFProbeConfig struct {
 type FFProbeProcessor struct {
 	binPath string
 	l       logging.Logger
-	cache   gcache.Cache
+	c       cache.Cache
 	lk      sync.Locker
 }
-
-type cacheKeyType string
 
 func (FFProbeProcessor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewFFProbeProcessor(c FFProbeConfig, mlc cache.MultiLoaderCache, l logging.Logger) (p *FFProbeProcessor, err error) {
+func NewFFProbeProcessor(c FFProbeConfig, l logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
@@ -43,8 +40,11 @@ func NewFFProbeProcessor(c FFProbeConfig, mlc cache.MultiLoaderCache, l logging.
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	var key cacheKeyType
-	p.cache = mlc.RegisterLoaderFunc(&key, p.loader)
+	p.c = cache.NewMemoryStorage(
+		cache.SingleFlight,
+		cache.Expiration(time.Minute),
+		cache.Loader(p.loader),
+	)
 	return
 }
 
@@ -153,7 +153,7 @@ func (p *FFProbeProcessor) probePath(path string, ctx context.Context) (info ffp
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		val, err := p.cache.Get(cacheKeyType(path))
+		val, err := p.c.Get(path)
 		if err == nil {
 			info = val.(ffprobeInfo)
 		}
@@ -170,7 +170,7 @@ func (p *FFProbeProcessor) loader(key interface{}) (value interface{}, err error
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
-	filePath := string(key.(cacheKeyType))
+	filePath := key.(string)
 	l := p.l.With("path", filePath)
 
 	cmd := exec.Command(p.binPath, "-i", filePath, "-of", "json", "-v", "error", "-show_format", "-show_streams")

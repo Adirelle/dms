@@ -3,15 +3,14 @@ package processor
 import (
 	"context"
 	"regexp"
+	"time"
 
-	"github.com/anacrolix/dms/cache"
-
+	"github.com/Adirelle/dms/pkg/cds"
+	"github.com/Adirelle/dms/pkg/didl_lite"
+	"github.com/Adirelle/dms/pkg/filesystem"
+	"github.com/Adirelle/go-libs/cache"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/anacrolix/dms/cds"
-	"github.com/anacrolix/dms/didl_lite"
-	"github.com/anacrolix/dms/filesystem"
-	"github.com/bluele/gcache"
 )
 
 var (
@@ -19,19 +18,18 @@ var (
 )
 
 type AlbumArtProcessor struct {
-	fs    *filesystem.Filesystem
-	cache gcache.Cache
-	l     logging.Logger
+	fs *filesystem.Filesystem
+	c  cache.Cache
+	l  logging.Logger
 }
 
-type artCacheKey struct {
-	filesystem.ID
-}
-
-func NewAlbumArtProcessor(fs *filesystem.Filesystem, cache cache.MultiLoaderCache, logger logging.Logger) *AlbumArtProcessor {
+func NewAlbumArtProcessor(fs *filesystem.Filesystem, logger logging.Logger) *AlbumArtProcessor {
 	a := &AlbumArtProcessor{fs: fs, l: logger}
-	var key artCacheKey
-	a.cache = cache.RegisterLoaderFunc(&key, a.loader)
+	a.c = cache.NewMemoryStorage(
+		cache.SingleFlight,
+		cache.Expiration(time.Minute),
+		cache.Loader(a.loader),
+	)
 	return a
 }
 
@@ -50,7 +48,7 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
 		return
 	}
 
-	uri, err := a.cache.Get(artCacheKey{parentID})
+	uri, err := a.c.Get(parentID)
 	if uri != nil {
 		obj.Tags[didl_lite.TagAlbumArtURI] = uri.(*adi_http.URLSpec)
 	} else if err != nil {
@@ -59,7 +57,7 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
 }
 
 func (a *AlbumArtProcessor) loader(key interface{}) (res interface{}, err error) {
-	parentID := key.(artCacheKey).ID
+	parentID := key.(filesystem.ID)
 	a.l.Debugf("processing: %v", parentID)
 
 	parent, err := a.fs.Get(parentID)

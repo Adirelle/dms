@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/anacrolix/dms/filesystem"
+	"github.com/Adirelle/dms/pkg/filesystem"
 )
 
 // RootID is the identifier of the root of any ContentDirectory

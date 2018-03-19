@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/anacrolix/dms/cds"
-	"github.com/anacrolix/dms/didl_lite"
+	"github.com/Adirelle/dms/pkg/cds"
+	"github.com/Adirelle/dms/pkg/didl_lite"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/jchannon/negotiator"
 )

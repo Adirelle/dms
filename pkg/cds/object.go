@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/anacrolix/dms/didl_lite"
-	"github.com/anacrolix/dms/filesystem"
+	"github.com/Adirelle/dms/pkg/didl_lite"
+	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/go-libs/http"
 	"github.com/h2non/filetype"
 	types "gopkg.in/h2non/filetype.v1/types"

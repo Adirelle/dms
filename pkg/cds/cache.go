@@ -4,27 +4,29 @@ import (
 	"context"
 	"time"
 
+	"github.com/Adirelle/dms/pkg/filesystem"
+	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/anacrolix/dms/cache"
-	"github.com/anacrolix/dms/filesystem"
-	"github.com/bluele/gcache"
 )
 
 const LoaderTimeout = 5 * time.Second
 
 type Cache struct {
 	ContentDirectory
-	cache gcache.Cache
-	ctx   context.Context
+	c   cache.Cache
+	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, backend cache.MultiLoaderCache, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, l logging.Logger) *Cache {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	var key filesystem.ID
-	c.cache = backend.RegisterLoaderFunc(&key, c.doGet)
+	c.c = cache.NewMemoryStorage(
+		cache.SingleFlight,
+		cache.Expiration(time.Minute),
+		cache.Loader(c.loader),
+	)
 	return c
 }
 
@@ -32,7 +34,7 @@ func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err err
 	ch := make(chan struct{})
 	go func() {
 		defer close(ch)
-		val, cerr := c.cache.Get(id)
+		val, cerr := c.c.Get(id)
 		if val != nil && err == nil {
 			obj = val.(*Object)
 		} else {
@@ -51,7 +53,7 @@ func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) (objs []*Obje
 	return getChildren(c, id, ctx)
 }
 
-func (c *Cache) doGet(key interface{}) (obj interface{}, err error) {
+func (c *Cache) loader(key interface{}) (obj interface{}, err error) {
 	local, cancel := context.WithTimeout(c.ctx, LoaderTimeout)
 	defer cancel()
 	obj, err = c.ContentDirectory.Get(key.(filesystem.ID), local)
