@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	dms_cache "github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/go-libs/cache"
@@ -31,7 +32,7 @@ func (FFProbeProcessor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewFFProbeProcessor(c FFProbeConfig, l logging.Logger) (p *FFProbeProcessor, err error) {
+func NewFFProbeProcessor(c FFProbeConfig, cf *dms_cache.Factory, l logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
@@ -40,11 +41,7 @@ func NewFFProbeProcessor(c FFProbeConfig, l logging.Logger) (p *FFProbeProcessor
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c = cache.NewMemoryStorage(
-		cache.SingleFlight,
-		cache.Expiration(time.Minute),
-		cache.Loader(p.loader),
-	)
+	p.c = cf.Create("FFProbeProcessor", p.loader)
 	return
 }
 

@@ -3,8 +3,8 @@ package processor
 import (
 	"context"
 	"regexp"
-	"time"
 
+	dms_cache "github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/dms/pkg/filesystem"
@@ -23,13 +23,9 @@ type AlbumArtProcessor struct {
 	l  logging.Logger
 }
 
-func NewAlbumArtProcessor(fs *filesystem.Filesystem, logger logging.Logger) *AlbumArtProcessor {
+func NewAlbumArtProcessor(fs *filesystem.Filesystem, cf *dms_cache.Factory, logger logging.Logger) *AlbumArtProcessor {
 	a := &AlbumArtProcessor{fs: fs, l: logger}
-	a.c = cache.NewMemoryStorage(
-		cache.SingleFlight,
-		cache.Expiration(time.Minute),
-		cache.Loader(a.loader),
-	)
+	a.c = cf.Create("AlbumArt", a.loader)
 	return a
 }
 

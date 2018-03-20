@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	dms_cache "github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
@@ -17,16 +18,12 @@ type Cache struct {
 	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, cf *dms_cache.Factory, l logging.Logger) *Cache {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	c.c = cache.NewMemoryStorage(
-		cache.SingleFlight,
-		cache.Expiration(time.Minute),
-		cache.Loader(c.loader),
-	)
+	c.c = cf.Create("ContentDirectory", c.loader)
 	return c
 }
 

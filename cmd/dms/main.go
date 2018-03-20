@@ -20,6 +20,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/dms/pkg/processor"
@@ -369,8 +370,8 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory) cds.ContentDirectory {
-	return cds.NewCache(dir, c.logger("cd-cache"))
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Factory) cds.ContentDirectory {
+	return cds.NewCache(dir, cf, c.logger("cd-cache"))
 }
 
 func (c *Container) ProcessingDirectory(
@@ -378,12 +379,13 @@ func (c *Container) ProcessingDirectory(
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
 	ffprober *processor.FFProbeProcessor,
+	albumArt *processor.AlbumArtProcessor,
 	iconer *processor.BasicIconProcessor,
 ) (d *cds.ProcessingDirectory) {
 	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
 	d.AddProcessor(100, fserver)
-	d.AddProcessor(95, processor.NewAlbumArtProcessor(fs, c.logger("album-art")))
+	d.AddProcessor(95, albumArt)
 	d.AddProcessor(90, iconer)
 
 	if ffprober != nil {
@@ -393,9 +395,9 @@ func (c *Container) ProcessingDirectory(
 	return
 }
 
-func (c *Container) FFProbeProcessor() (p *processor.FFProbeProcessor) {
+func (c *Container) FFProbeProcessor(cf *cache.Factory) (p *processor.FFProbeProcessor) {
 	l := c.logger("ffprobe")
-	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, l)
+	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, cf, l)
 	if err != nil {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())
 	}
@@ -405,6 +407,10 @@ func (c *Container) FFProbeProcessor() (p *processor.FFProbeProcessor) {
 
 func (c *Container) BasicIconProcessor() *processor.BasicIconProcessor {
 	return &processor.BasicIconProcessor{}
+}
+
+func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Factory) *processor.AlbumArtProcessor {
+	return processor.NewAlbumArtProcessor(fs, cf, c.logger("album-art"))
 }
 
 func (c *Container) FilesystemContentDirectory(fs *filesystem.Filesystem) *cds.FilesystemContentDirectory {
@@ -417,4 +423,11 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 		_, err = fs.Get(filesystem.RootID)
 	}
 	return
+}
+
+func (c *Container) CacheFactory() *cache.Factory {
+	return &cache.Factory{
+		Size: 10000,
+		TTL:  time.Minute,
+	}
 }
