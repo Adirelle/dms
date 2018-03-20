@@ -23,9 +23,9 @@ type AlbumArtProcessor struct {
 	l  logging.Logger
 }
 
-func NewAlbumArtProcessor(fs *filesystem.Filesystem, cf *dms_cache.Factory, logger logging.Logger) *AlbumArtProcessor {
+func NewAlbumArtProcessor(fs *filesystem.Filesystem, cm *dms_cache.Manager, logger logging.Logger) *AlbumArtProcessor {
 	a := &AlbumArtProcessor{fs: fs, l: logger}
-	a.c = cf.Create("AlbumArt", a.loader)
+	a.c = cm.Create(a.loader)
 	return a
 }
 
@@ -62,9 +62,8 @@ func (a *AlbumArtProcessor) loader(key interface{}) (res interface{}, err error)
 		return
 	}
 
-	childrenID := parent.GetChildrenID()
-	a.l.Debugf("%d children", len(childrenID))
-	for _, childID := range childrenID {
+	a.l.Debugf("%d children", len(parent.ChildrenID))
+	for _, childID := range parent.ChildrenID {
 		if !coverRegex.MatchString(childID.BaseName()) {
 			a.l.Debugf("ignoring: %s", childID)
 			continue

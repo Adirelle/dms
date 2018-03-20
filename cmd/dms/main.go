@@ -105,6 +105,11 @@ type Config struct {
 	NotifyInterval time.Duration
 	Debug          bool
 	FFProbe        processor.FFProbeConfig
+	Cache          struct {
+		DBPath string
+		Size   int
+		TTL    time.Duration
+	}
 }
 
 func (c *Config) SetupFlags() {
@@ -196,11 +201,16 @@ func (c *Container) logger(name string) logging.Logger {
 
 type SSDPService suture.Service
 
-func (c *Container) Supervisor(httpServer *adi_http.Service, ssdpServer ssdp.Service) *suture.Supervisor {
+func (c *Container) Supervisor(
+	http *adi_http.Service,
+	ssdp ssdp.Service,
+	cm *cache.Manager,
+) *suture.Supervisor {
 	l := c.logger("supervisor")
 	spv := suture.New("dms", suture.Spec{Log: func(m string) { l.Warn(m) }})
-	spv.Add(httpServer)
-	spv.Add(ssdpServer)
+	spv.Add(http)
+	spv.Add(ssdp)
+	spv.Add(cm)
 	return spv
 }
 
@@ -370,7 +380,7 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Factory) cds.ContentDirectory {
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Manager) cds.ContentDirectory {
 	return cds.NewCache(dir, cf, c.logger("cd-cache"))
 }
 
@@ -395,7 +405,7 @@ func (c *Container) ProcessingDirectory(
 	return
 }
 
-func (c *Container) FFProbeProcessor(cf *cache.Factory) (p *processor.FFProbeProcessor) {
+func (c *Container) FFProbeProcessor(cf *cache.Manager) (p *processor.FFProbeProcessor) {
 	l := c.logger("ffprobe")
 	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, cf, l)
 	if err != nil {
@@ -409,7 +419,7 @@ func (c *Container) BasicIconProcessor() *processor.BasicIconProcessor {
 	return &processor.BasicIconProcessor{}
 }
 
-func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Factory) *processor.AlbumArtProcessor {
+func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) *processor.AlbumArtProcessor {
 	return processor.NewAlbumArtProcessor(fs, cf, c.logger("album-art"))
 }
 
@@ -425,8 +435,8 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 	return
 }
 
-func (c *Container) CacheFactory() *cache.Factory {
-	return &cache.Factory{
+func (c *Container) CacheManager() *cache.Manager {
+	return &cache.Manager{
 		Size: 10000,
 		TTL:  time.Minute,
 	}

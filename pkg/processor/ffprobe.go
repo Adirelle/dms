@@ -32,7 +32,7 @@ func (FFProbeProcessor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewFFProbeProcessor(c FFProbeConfig, cf *dms_cache.Factory, l logging.Logger) (p *FFProbeProcessor, err error) {
+func NewFFProbeProcessor(c FFProbeConfig, cm *dms_cache.Manager, l logging.Logger) (p *FFProbeProcessor, err error) {
 	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
@@ -41,7 +41,7 @@ func NewFFProbeProcessor(c FFProbeConfig, cf *dms_cache.Factory, l logging.Logge
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c = cf.Create("FFProbeProcessor", p.loader)
+	p.c = cm.Create(p.loader)
 	return
 }
 

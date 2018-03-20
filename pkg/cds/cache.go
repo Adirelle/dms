@@ -18,12 +18,12 @@ type Cache struct {
 	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, cf *dms_cache.Factory, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) *Cache {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	c.c = cf.Create("ContentDirectory", c.loader)
+	c.c = cm.Create(c.loader)
 	return c
 }
 
