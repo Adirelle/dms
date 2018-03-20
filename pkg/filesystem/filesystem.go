@@ -23,9 +23,13 @@ type Filesystem struct {
 type Object struct {
 	ID
 	FilePath string
-	os.FileInfo
 
-	childrenID []ID
+	Name    string
+	IsDir   bool
+	Size    int64
+	ModTime time.Time
+
+	ChildrenID []ID
 }
 
 // New creates a new Filesystem based on the passed configuration
@@ -59,9 +63,16 @@ func (fs *Filesystem) Get(id ID) (ret *Object, err error) {
 	if !fi.IsDir() && !fi.Mode().IsRegular() {
 		return nil, os.ErrNotExist
 	}
-	ret = &Object{ID: id, FilePath: fp, FileInfo: fi}
-	if ret.IsDir() {
-		ret.childrenID, err = fs.readChildren(id, fp)
+	ret = &Object{
+		ID:       id,
+		FilePath: fp,
+		Name:     fi.Name(),
+		IsDir:    fi.IsDir(),
+		Size:     fi.Size(),
+		ModTime:  fi.ModTime(),
+	}
+	if ret.IsDir {
+		ret.ChildrenID, err = fs.readChildren(id, fp)
 	}
 	return
 }
@@ -102,10 +113,6 @@ func (fs *Filesystem) filter(path string) (accept bool, err error) {
 		accept = false
 	}
 	return
-}
-
-func (o *Object) GetChildrenID() []ID {
-	return o.childrenID
 }
 
 func tryToOpenPath(path string) (readable bool, err error) {

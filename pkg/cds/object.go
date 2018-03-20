@@ -32,14 +32,14 @@ func newObject(obj *filesystem.Object) (o *Object, err error) {
 
 func guessMimeType(obj *Object) (title string, mimeType types.MIME, err error) {
 	if obj.IsContainer() {
-		return obj.Name(), FolderType, nil
+		return obj.Name, FolderType, nil
 	}
 	typ, err := filetype.MatchFile(obj.FilePath)
 	if err != nil {
 		err = fmt.Errorf("error probing %q: %s", obj.FilePath, err.Error())
 		return
 	}
-	title = strings.TrimSuffix(obj.Name(), "."+typ.Extension)
+	title = strings.TrimSuffix(obj.Name, "."+typ.Extension)
 	mimeType = typ.MIME
 	return
 }
@@ -52,7 +52,7 @@ func (o *Object) AddResource(rs ...Resource) {
 }
 
 func (o *Object) IsContainer() bool {
-	return o.IsDir()
+	return o.IsDir
 }
 
 func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, err error) {
@@ -88,7 +88,7 @@ func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, e
 		cm.Class = "object.container"
 		res = &didl_lite.Container{
 			Common:     cm,
-			ChildCount: uint(len(o.GetChildrenID())),
+			ChildCount: uint(len(o.ChildrenID)),
 		}
 	} else {
 		cm.Class = "object.item." + o.MimeType.Type + "Item"

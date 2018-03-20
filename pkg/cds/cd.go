@@ -50,8 +50,7 @@ func getChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (chi
 	if err != nil {
 		return
 	}
-	childrenIDs := parent.GetChildrenID()
-	for _, id := range childrenIDs {
+	for _, id := range parent.ChildrenID {
 		var child *Object
 		child, err = d.Get(id, ctx)
 		if err != nil {
@@ -74,8 +73,8 @@ type sortableObjectList []*Object
 func (l sortableObjectList) Len() int      { return len(l) }
 func (l sortableObjectList) Swap(i, j int) { l[j], l[i] = l[i], l[j] }
 func (l sortableObjectList) Less(i, j int) bool {
-	if l[i].IsDir() != l[j].IsDir() {
-		return l[i].IsDir()
+	if l[i].IsDir != l[j].IsDir {
+		return l[i].IsDir
 	}
-	return l[i].Name() < l[j].Name()
+	return l[i].Name < l[j].Name
 }
