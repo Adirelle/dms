@@ -16,3 +16,6 @@
 
 # Visual Code configuration
 .vscode
+
+# Generated code
+*.generated.go

@@ -1,7 +1,7 @@
 package main
 
-//go:generate bash ./versionInfo.sh version.go
-//go:generate go generate ../pkg/...
+//go:generate bash ./versionInfo.sh version.generated.go
+//go:generate go generate ../../pkg/...
 
 import (
 	"encoding/json"

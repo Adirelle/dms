@@ -14,7 +14,7 @@ import (
 	_ "github.com/jteeuwen/go-bindata"
 )
 
-//go:generate go-bindata -o icons/icons.go -pkg icons -ignore .*\.go -nocompress -prefix icons/ icons/...
+//go:generate go-bindata -o icons/icons.generated.go -pkg icons -ignore .*\.go -nocompress -prefix icons/ icons/...
 
 const (
 	IconRoute          = "processor_icons"
