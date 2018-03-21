@@ -18,13 +18,14 @@ type Cache struct {
 	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) *Cache {
+func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) (*Cache, error) {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	c.c = cm.Create("cds", c.loader)
-	return c
+	var err error
+	c.c, err = cm.CreatePersistent("cds", c.loader, func() interface{} { return Object{} })
+	return c, err
 }
 
 func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err error) {

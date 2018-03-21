@@ -95,11 +95,22 @@ func main() {
 	ctn.RegisterFrom(inner)
 
 	var db *bolt.DB
-	if err = ctn.Fetch(&db); err != nil {
-		l.Fatal(err)
-	} else if db != nil {
+	if err = ctn.Fetch(&db); db != nil {
 		l.Infof("using cache storage: %s", db.Path())
-		defer db.Close()
+		defer func() {
+			l.Infof("Closing cache storage")
+			db.Sync()
+			db.Close()
+		}()
+	} else if err != nil {
+		l.Fatal(err)
+	}
+
+	var cm *cache.Manager
+	if err = ctn.Fetch(&cm); err == nil {
+		defer cm.Flush()
+	} else {
+		l.Fatal(err)
 	}
 
 	var spv *suture.Supervisor
@@ -223,13 +234,11 @@ type SSDPService suture.Service
 func (c *Container) Supervisor(
 	http *adi_http.Service,
 	ssdp ssdp.Service,
-	cm *cache.Manager,
 ) *suture.Supervisor {
 	l := c.logger("supervisor")
 	spv := suture.New("dms", suture.Spec{Log: func(m string) { l.Warn(m) }})
 	spv.Add(http)
 	spv.Add(ssdp)
-	spv.Add(cm)
 	return spv
 }
 
@@ -399,7 +408,7 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Manager) cds.ContentDirectory {
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Manager) (cds.ContentDirectory, error) {
 	return cds.NewCache(dir, cf, c.logger("cd-cache"))
 }
 

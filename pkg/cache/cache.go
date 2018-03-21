@@ -3,8 +3,6 @@ package cache
 import (
 	"time"
 
-	"gopkg.in/thejerf/suture.v2"
-
 	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
 	"github.com/boltdb/bolt"
@@ -16,7 +14,6 @@ type Manager struct {
 	TTL  time.Duration
 	L    logging.Logger
 
-	spv    *suture.Supervisor
 	caches []cache.Cache
 }
 
@@ -36,11 +33,15 @@ func (f *Manager) Create(name string, l cache.LoaderFunc) cache.Cache {
 	return c
 }
 
-func (f *Manager) CreatePersistent(name string, l cache.LoaderFunc, s Serializer) cache.Cache {
+func (f *Manager) CreatePersistent(name string, l cache.LoaderFunc, ff FactoryFunc) (cache.Cache, error) {
 	if f.DB == nil {
-		return f.Create(name, l)
+		return f.Create(name, l), nil
 	}
-	c := NewBoltDBStorage(f.DB, name, s)
+	log := f.L.Named(name)
+	c, err := NewBoltDBStorage(f.DB, name, NewCodecSerializer(ff), log)
+	if err != nil {
+		return nil, err
+	}
 	c = cache.Name(name)(c)
 	mem := cache.NewMemoryStorage(cache.Name(name + "-wt"))
 	if f.Size > 0 {
@@ -53,8 +54,9 @@ func (f *Manager) CreatePersistent(name string, l cache.LoaderFunc, s Serializer
 	}
 	c = cache.Loader(l)(c)
 	c = cache.SingleFlight(c)
+	c = cache.Spy(log.Debugf)(c)
 	f.caches = append(f.caches, c)
-	return c
+	return c, nil
 }
 
 func (f *Manager) Flush() {
@@ -62,22 +64,4 @@ func (f *Manager) Flush() {
 	for _, c := range f.caches {
 		c.Flush()
 	}
-}
-
-func (f *Manager) Serve() {
-	f.L.Info("serving")
-	f.spv = suture.NewSimple("caches")
-	for _, c := range f.caches {
-		if svc, ok := c.(suture.Service); ok {
-			f.spv.Add(svc)
-		}
-	}
-	f.spv.Serve()
-}
-
-func (f *Manager) Stop() {
-	f.L.Info("stopping")
-	f.spv.Stop()
-	f.Flush()
-	f.L.Info("stopped")
 }
