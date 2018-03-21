@@ -2,59 +2,47 @@ package filesystem
 
 import (
 	"errors"
-	"fmt"
 	"path"
 )
 
 // ID is an "opaque" identifier for filesystem objects
-type ID interface {
-	fmt.Stringer
-	BaseName() string
-	IsRoot() bool
-	ParentID() ID
-	ChildID(name string) ID
-}
+type ID string
 
 const (
 	// NullID represents the nil value of object identifiers
-	NullID = nullID("")
+	NullID = ID("-1")
 
 	// RootID is the object identifier of the root of the filesystem
-	RootID = rootID("/")
+	RootID = ID("/")
 )
 
-type nullID string
+func (id ID) String() string { return string(id) }
+func (id ID) IsRoot() bool   { return string(id) == "/" }
+func (id ID) IsNull() bool   { return string(id) == "-1" }
 
-func (nullID) String() string    { return "-1" }
-func (nullID) BaseName() string  { return "" }
-func (nullID) IsRoot() bool      { return false }
-func (nullID) ParentID() ID      { return NullID }
-func (nullID) ChildID(string) ID { return NullID }
+func (id ID) BaseName() string {
+	if id.IsNull() || id.IsRoot() {
+		return ""
+	}
+	return path.Base(string(id))
+}
 
-type rootID string
-
-func (rootID) String() string         { return "/" }
-func (rootID) BaseName() string       { return "/" }
-func (rootID) IsRoot() bool           { return true }
-func (rootID) ParentID() ID           { return NullID }
-func (rootID) ChildID(name string) ID { return objID(path.Join("/", name)) }
-
-type objID string
-
-func (o objID) String() string   { return string(o) }
-func (o objID) BaseName() string { return path.Base(string(o)) }
-func (objID) IsRoot() bool       { return false }
-
-func (o objID) ParentID() ID {
-	p := path.Dir(string(o))
+func (id ID) ParentID() ID {
+	if id.IsNull() || id.IsRoot() {
+		return NullID
+	}
+	p := path.Dir(string(id))
 	if p == "." || p == "/" {
 		return RootID
 	}
-	return objID(p)
+	return ID(p)
 }
 
-func (o objID) ChildID(name string) ID {
-	return objID(path.Join(string(o), name))
+func (id ID) ChildID(name string) ID {
+	if id.IsNull() {
+		return NullID
+	}
+	return ID(path.Join(string(id), name))
 }
 
 // ErrInvalidObjectID is returned by ParseObjectID for invalid input
@@ -62,9 +50,9 @@ var ErrInvalidObjectID = errors.New("invalid ID")
 
 // ParseObjectID parses an ID out of a string
 func ParseObjectID(s string) (ID, error) {
-	if s == "0" {
+	if s == "0" || s == "/" {
 		return RootID, nil
-	} else if s == "-1" {
+	} else if s == "-1" || s == "" {
 		return NullID, nil
 	}
 	s = path.Clean(s)
@@ -74,5 +62,5 @@ func ParseObjectID(s string) (ID, error) {
 	if s == "/" {
 		return RootID, nil
 	}
-	return objID(s), nil
+	return ID(s), nil
 }
