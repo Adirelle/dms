@@ -32,7 +32,7 @@ func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err err
 	go func() {
 		defer close(ch)
 		val, cerr := c.c.Get(id)
-		if val != nil && err == nil {
+		if val != nil && cerr == nil {
 			obj = val.(*Object)
 		} else {
 			err = cerr
