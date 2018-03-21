@@ -24,7 +24,7 @@ func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) (*Cac
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
 	var err error
-	c.c, err = cm.CreatePersistent("cds", c.loader, func() interface{} { return Object{} })
+	c.c, err = cm.CreatePersistent("cds", c.loader, func() interface{} { return &Object{} })
 	return c, err
 }
 

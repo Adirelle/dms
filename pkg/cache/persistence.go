@@ -153,6 +153,6 @@ func (s *codecSerializer) SerializeValue(w io.Writer, value interface{}) error {
 func (s *codecSerializer) UnserializeValue(data []byte) (value interface{}, err error) {
 	value = s.factory()
 	s.dec.ResetBytes(data)
-	err = s.dec.Decode(&value)
+	err = s.dec.Decode(value)
 	return
 }
