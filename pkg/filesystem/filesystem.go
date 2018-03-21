@@ -19,9 +19,9 @@ type Filesystem struct {
 	lastModTime time.Time
 }
 
-// Object is an abstraction for a file or directory of the content directory
+// Object represents either an item or a container of the content directory
 type Object struct {
-	ID
+	ID       ID
 	FilePath string
 
 	Name    string

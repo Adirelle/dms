@@ -59,7 +59,7 @@ func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, e
 
 	cm := didl_lite.Common{
 		ID:         o.ID.String(),
-		ParentID:   o.ParentID().String(),
+		ParentID:   o.ID.ParentID().String(),
 		Restricted: true,
 		Title:      o.Title,
 	}

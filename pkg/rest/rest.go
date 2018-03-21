@@ -58,7 +58,7 @@ func (s *Server) getResponse(o *cds.Object, ctx context.Context) (data response,
 	if err != nil {
 		return
 	}
-	children, err := s.Directory.GetChildren(o, ctx)
+	children, err := s.Directory.GetChildren(o.ID, ctx)
 	if err != nil {
 		return
 	}

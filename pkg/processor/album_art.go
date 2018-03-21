@@ -34,14 +34,9 @@ func (AlbumArtProcessor) String() string {
 }
 
 func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
-	var parentID filesystem.ID
-
-	if obj.IsContainer() {
-		parentID = obj.ID
-	} else if obj.MimeType.Type == "audio" {
-		parentID = obj.ParentID()
-	} else {
-		return
+	parentID := obj.ID
+	if !obj.IsContainer() {
+		parentID = parentID.ParentID()
 	}
 
 	uri, err := a.c.Get(parentID)
