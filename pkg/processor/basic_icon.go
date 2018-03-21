@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"github.com/Adirelle/dms/pkg/cds"
-	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/dms/pkg/processor/icons"
 	adi_http "github.com/Adirelle/go-libs/http"
 	assetfs "github.com/elazarl/go-bindata-assetfs"
@@ -29,7 +28,7 @@ func (BasicIconProcessor) String() string {
 }
 
 func (b BasicIconProcessor) Process(obj *cds.Object, _ context.Context) {
-	obj.Tags[didl_lite.TagIcon] = adi_http.NewURLSpec(IconRoute, RouteIconParameter, b.guessIcon(obj))
+	obj.Icon = adi_http.NewURLSpec(IconRoute, RouteIconParameter, b.guessIcon(obj))
 }
 
 func (b BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {

@@ -6,7 +6,6 @@ import (
 
 	dms_cache "github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
-	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/go-libs/cache"
 	adi_http "github.com/Adirelle/go-libs/http"
@@ -41,7 +40,7 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
 
 	uri, err := a.c.Get(parentID)
 	if uri != nil {
-		obj.Tags[didl_lite.TagAlbumArtURI] = uri.(*adi_http.URLSpec)
+		obj.AlbumArtURI = uri.(*adi_http.URLSpec)
 	} else if err != nil {
 		logging.MustFromContext(ctx).Named("album-art").Warn(err)
 	}

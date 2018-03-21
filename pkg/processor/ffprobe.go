@@ -87,14 +87,12 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object, ctx context.Context) err
 		if err != nil {
 			return err
 		}
-		obj.Tags[didl_lite.TagDate] = created.Format(time.RFC3339)
+		obj.Date = created
 	}
 
-	for tagName, attrName := range tagMap {
-		if value, ok := info.Format.Tags[tagName]; ok {
-			obj.Tags[attrName] = value
-		}
-	}
+	obj.Artist = info.Format.Tags["artist"]
+	obj.Genre = info.Format.Tags["genre"]
+	obj.Album = info.Format.Tags["album"]
 
 	return nil
 }
@@ -117,10 +115,10 @@ func (p *FFProbeProcessor) probeResource(res *cds.Resource, ctx context.Context)
 	}
 
 	if hasDuration {
-		res.SetTag(didl_lite.ResBitrate, info.Format.BitRate)
+		res.Bitrate = uint32(info.Format.BitRate.Int64())
 		if info.Format.Duration != 0.0 {
 			duration := float64(info.Format.Duration) * float64(time.Second)
-			res.SetTag(didl_lite.ResDuration, didl_lite.Duration(time.Duration(duration)))
+			res.Duration = time.Duration(duration)
 		}
 	}
 
@@ -128,18 +126,13 @@ func (p *FFProbeProcessor) probeResource(res *cds.Resource, ctx context.Context)
 	for _, s := range info.Streams {
 		if hasVideo && s.CodecType == "video" && (!gotVideo || s.Disposition.Default == 1) {
 			gotVideo = true
-			if s.Width != 0 && s.Height != 0 {
-				res.SetTag(didl_lite.ResResolution, didl_lite.Resolution{s.Width, s.Height})
-			}
+			res.Resolution.Width = s.Width
+			res.Resolution.Height = s.Height
 		}
 		if hasAudio && s.CodecType == "audio" && (!gotAudio || s.Disposition.Default == 1) {
 			gotAudio = true
-			if s.SampleRate != 0 {
-				res.SetTag(didl_lite.ResSampleFrequency, s.SampleRate)
-			}
-			if s.Channels != 0 {
-				res.SetTag(didl_lite.ResNrAudioChannels, s.Channels)
-			}
+			res.SampleFrequency = uint32(s.SampleRate.Int64())
+			res.NrAudioChannels = uint8(s.Channels)
 		}
 	}
 
@@ -214,6 +207,10 @@ type ffprobeFormat struct {
 
 type floatString float64
 
+func (s floatString) Float64() float64 {
+	return float64(s)
+}
+
 func (s *floatString) UnmarshalText(t []byte) (err error) {
 	f, err := strconv.ParseFloat(string(t), 64)
 	if err == nil {
@@ -223,6 +220,10 @@ func (s *floatString) UnmarshalText(t []byte) (err error) {
 }
 
 type integerString int64
+
+func (s integerString) Int64() int64 {
+	return int64(s)
+}
 
 func (s *integerString) UnmarshalText(t []byte) (err error) {
 	i, err := strconv.ParseInt(string(t), 10, 64)

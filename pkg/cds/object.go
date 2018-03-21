@@ -1,10 +1,10 @@
 package cds
 
 import (
-	"encoding"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/dms/pkg/filesystem"
@@ -17,15 +17,22 @@ var FolderType = types.NewMIME("application/vnd.container")
 
 type Object struct {
 	filesystem.Object
-	Title     string
-	Tags      map[string]interface{}
+	Title string
+
+	Album       string
+	AlbumArtURI *http.URLSpec
+	Artist      string
+	Date        time.Time
+	Genre       string
+	Icon        *http.URLSpec
+
 	Resources []Resource
 
 	MimeType types.MIME
 }
 
 func newObject(obj *filesystem.Object) (o *Object, err error) {
-	o = &Object{Object: *obj, Tags: make(map[string]interface{})}
+	o = &Object{Object: *obj}
 	o.Title, o.MimeType, err = guessMimeType(o)
 	return
 }
@@ -64,14 +71,33 @@ func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, e
 		Title:      o.Title,
 	}
 
-	if o.Tags != nil {
-		for name, value := range o.Tags {
-			var repr string
-			repr, err = marshalValue(value, gen)
-			if err != nil {
-				return
-			}
-			cm.Tags.Set(name, repr)
+	if !o.Date.IsZero() {
+		cm.Tags.Set(didl_lite.TagDate, o.Date.Format(time.RFC3339))
+	}
+	if o.Artist != "" {
+		cm.Tags.Set(didl_lite.TagArtist, o.Artist)
+	}
+	if o.Album != "" {
+		cm.Tags.Set(didl_lite.TagAlbum, o.Album)
+	}
+	if o.Genre != "" {
+		cm.Tags.Set(didl_lite.TagGenre, o.Genre)
+	}
+
+	var url string
+	if o.Icon != nil {
+		if url, err = gen.URL(o.Icon); err == nil {
+			cm.Tags.Set(didl_lite.TagIcon, url)
+		} else {
+			return
+		}
+	}
+
+	if o.AlbumArtURI != nil {
+		if url, err = gen.URL(o.AlbumArtURI); err == nil {
+			cm.Tags.Set(didl_lite.TagAlbumArtURI, url)
+		} else {
+			return
 		}
 	}
 
@@ -99,11 +125,19 @@ func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, e
 }
 
 type Resource struct {
-	FilePath string
 	URL      *http.URLSpec
 	Size     uint64
-	Tags     map[string]interface{}
 	MimeType types.MIME
+
+	Duration        time.Duration
+	Bitrate         uint32
+	SampleFrequency uint32
+	BitsPerSample   uint8
+	NrAudioChannels uint8
+	Resolution      didl_lite.Resolution
+	ColorDepth      uint8
+
+	FilePath string
 	Owner    *Object
 }
 
@@ -117,50 +151,28 @@ func (r *Resource) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Resourc
 		URI:          url,
 	}
 	res.SetTag(didl_lite.ResSize, strconv.FormatUint(r.Size, 10))
-	if r.Tags != nil {
-		for name, value := range r.Tags {
-			var repr string
-			repr, err = marshalValue(value, gen)
-			if err != nil {
-				break
-			}
-			res.SetTag(name, repr)
-		}
+
+	if r.Duration != 0 {
+		res.SetTag(didl_lite.ResDuration, didl_lite.Duration(r.Duration).String())
 	}
+	if r.Bitrate != 0 {
+		res.SetTag(didl_lite.ResBitrate, strconv.FormatUint(uint64(r.Bitrate), 10))
+	}
+	if r.SampleFrequency != 0 {
+		res.SetTag(didl_lite.ResSampleFrequency, strconv.FormatUint(uint64(r.SampleFrequency), 10))
+	}
+	if r.BitsPerSample != 0 {
+		res.SetTag(didl_lite.ResBitsPerSample, strconv.FormatUint(uint64(r.BitsPerSample), 10))
+	}
+	if r.NrAudioChannels != 0 {
+		res.SetTag(didl_lite.ResNrAudioChannels, strconv.FormatUint(uint64(r.NrAudioChannels), 10))
+	}
+	if r.ColorDepth != 0 {
+		res.SetTag(didl_lite.ResColorDepth, strconv.FormatUint(uint64(r.ColorDepth), 10))
+	}
+	if r.Resolution.Width != 0 && r.Resolution.Height != 0 {
+		res.SetTag(didl_lite.ResResolution, r.Resolution.String())
+	}
+
 	return
-}
-
-func (r *Resource) SetTag(name string, value interface{}) {
-	if r.Tags == nil {
-		r.Tags = make(map[string]interface{})
-	}
-	r.Tags[name] = value
-}
-
-func marshalValue(data interface{}, gen http.URLGenerator) (string, error) {
-	switch value := data.(type) {
-	case *http.URLSpec:
-		if str, err := gen.URL(value); err == nil {
-			return str, nil
-		} else {
-			return "", err
-		}
-	case encoding.TextMarshaler:
-		if b, err := value.MarshalText(); err == nil {
-			return string(b), nil
-		} else {
-			return "", err
-		}
-	case fmt.Stringer:
-		return value.String(), nil
-	case string:
-		return value, nil
-	case []byte:
-		return string(value), nil
-	}
-	// switch reflect.ValueOf(data).Kind() {
-	// case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-	// 	return fmt.Sprintf("%d", data), nil
-	// }
-	return fmt.Sprintf("%v", data), nil
 }
