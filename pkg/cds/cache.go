@@ -23,7 +23,7 @@ func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) *Cach
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	c.c = cm.Create(c.loader)
+	c.c = cm.Create("cds", c.loader)
 	return c
 }
 

@@ -41,7 +41,7 @@ func NewFFProbeProcessor(c FFProbeConfig, cm *dms_cache.Manager, l logging.Logge
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c = cm.Create(p.loader)
+	p.c = cm.Create("ffprobe", p.loader)
 	return
 }
 

@@ -20,6 +20,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/boltdb/bolt"
+
 	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
@@ -61,6 +63,15 @@ func main() {
 			BinPath: "ffprobe",
 			Limit:   20,
 		},
+		Cache: struct {
+			DBPath string
+			Size   int
+			TTL    time.Duration
+		}{
+			".dms.db",
+			10000,
+			time.Minute,
+		},
 	}
 
 	config.ParseArgs()
@@ -82,6 +93,14 @@ func main() {
 	ctn.LogTo(ctnLogger)
 
 	ctn.RegisterFrom(inner)
+
+	var db *bolt.DB
+	if err = ctn.Fetch(&db); err != nil {
+		l.Fatal(err)
+	} else if db != nil {
+		l.Infof("using cache storage: %s", db.Path())
+		defer db.Close()
+	}
 
 	var spv *suture.Supervisor
 	if err = ctn.Fetch(&spv); err != nil {
@@ -435,9 +454,18 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 	return
 }
 
-func (c *Container) CacheManager() *cache.Manager {
+func (c *Container) CacheManager(db *bolt.DB) *cache.Manager {
 	return &cache.Manager{
-		Size: 10000,
-		TTL:  time.Minute,
+		DB:   db,
+		Size: c.Config.Cache.Size,
+		TTL:  c.Config.Cache.TTL,
+		L:    c.logger("caches"),
 	}
+}
+
+func (c *Container) CacheDB() (*bolt.DB, error) {
+	if c.Config.Cache.DBPath == "" {
+		return nil, nil
+	}
+	return bolt.Open(c.Config.Cache.DBPath, 0600, nil)
 }

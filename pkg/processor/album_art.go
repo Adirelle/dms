@@ -25,7 +25,7 @@ type AlbumArtProcessor struct {
 
 func NewAlbumArtProcessor(fs *filesystem.Filesystem, cm *dms_cache.Manager, logger logging.Logger) *AlbumArtProcessor {
 	a := &AlbumArtProcessor{fs: fs, l: logger}
-	a.c = cm.Create(a.loader)
+	a.c = cm.Create("album-art", a.loader)
 	return a
 }
 
