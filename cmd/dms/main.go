@@ -21,11 +21,14 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
+	"github.com/ugorji/go/codec"
 
 	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/dms/pkg/processor"
+	"github.com/Adirelle/dms/pkg/processor/basic_icon"
+	"github.com/Adirelle/dms/pkg/processor/ffprobe"
 	"github.com/Adirelle/dms/pkg/rest"
 	"github.com/Adirelle/dms/pkg/ssdp"
 	"github.com/Adirelle/dms/pkg/upnp"
@@ -59,7 +62,7 @@ func main() {
 		NotifyInterval: 30 * time.Minute,
 		HTTP:           &net.TCPAddr{Port: 1338},
 		Logging:        logging.DefaultConfig(),
-		FFProbe: processor.FFProbeConfig{
+		FFProbe: ffprobe.Config{
 			BinPath: "ffprobe",
 			Limit:   20,
 		},
@@ -134,7 +137,7 @@ type Config struct {
 	AccessLog      string
 	NotifyInterval time.Duration
 	Debug          bool
-	FFProbe        processor.FFProbeConfig
+	FFProbe        ffprobe.Config
 	Cache          struct {
 		DBPath string
 		Size   int
@@ -261,7 +264,7 @@ type AccessLog io.Writer
 func (c *Container) Router(
 	cd cds.ContentDirectory,
 	fserver *cds.FileServer,
-	iconer *processor.BasicIconProcessor,
+	iconer *basic_icon.Processor,
 	al AccessLog,
 ) (r *mux.Router, err error) {
 	r = mux.NewRouter()
@@ -275,8 +278,8 @@ func (c *Container) Router(
 		}
 	}
 
-	err = r.Methods("GET", "HEAD").Path("/icons/" + processor.RouteIconTemplate + ".png").
-		Name(processor.IconRoute).
+	err = r.Methods("GET", "HEAD").Path("/icons/" + basic_icon.RouteIconTemplate + ".png").
+		Name(basic_icon.IconRoute).
 		Handler(http.StripPrefix("/icons", iconer.Handler())).
 		GetError()
 	if err != nil {
@@ -416,9 +419,9 @@ func (c *Container) ProcessingDirectory(
 	dir *cds.FilesystemContentDirectory,
 	fs *filesystem.Filesystem,
 	fserver *cds.FileServer,
-	ffprober *processor.FFProbeProcessor,
+	ffprober *ffprobe.Processor,
 	albumArt *processor.AlbumArtProcessor,
-	iconer *processor.BasicIconProcessor,
+	iconer *basic_icon.Processor,
 ) (d *cds.ProcessingDirectory) {
 	d = &cds.ProcessingDirectory{ContentDirectory: dir, Logger: c.logger("processing")}
 
@@ -433,9 +436,9 @@ func (c *Container) ProcessingDirectory(
 	return
 }
 
-func (c *Container) FFProbeProcessor(cf *cache.Manager) (p *processor.FFProbeProcessor) {
+func (c *Container) FFProbeProcessor(cf *cache.Manager) (p *ffprobe.Processor) {
 	l := c.logger("ffprobe")
-	p, err := processor.NewFFProbeProcessor(c.Config.FFProbe, cf, l)
+	p, err := ffprobe.NewProcessor(c.Config.FFProbe, cf, l)
 	if err != nil {
 		l.Errorf("cannot initialize ffprobe: %s", err.Error())
 	}
@@ -443,8 +446,8 @@ func (c *Container) FFProbeProcessor(cf *cache.Manager) (p *processor.FFProbePro
 	return
 }
 
-func (c *Container) BasicIconProcessor() *processor.BasicIconProcessor {
-	return &processor.BasicIconProcessor{}
+func (c *Container) BasicIconProcessor() *basic_icon.Processor {
+	return &basic_icon.Processor{}
 }
 
 func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) *processor.AlbumArtProcessor {
@@ -464,11 +467,16 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 }
 
 func (c *Container) CacheManager(db *bolt.DB) *cache.Manager {
+	h := &codec.CborHandle{}
+	h.StructToArray = true
+	h.ErrorIfNoField = true
+
 	return &cache.Manager{
 		DB:   db,
 		Size: c.Config.Cache.Size,
 		TTL:  c.Config.Cache.TTL,
 		L:    c.logger("caches"),
+		H:    h,
 	}
 }
 

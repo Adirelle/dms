@@ -1,51 +1,49 @@
-package processor
+package ffprobe
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
 	"os/exec"
-	"strconv"
 	"sync"
 	"time"
 
 	dms_cache "github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
-	"github.com/Adirelle/dms/pkg/didl_lite"
 	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
 )
 
-type FFProbeConfig struct {
+type Config struct {
 	BinPath string
 	Limit   uint
 }
 
-type FFProbeProcessor struct {
+type Processor struct {
 	binPath string
 	l       logging.Logger
 	c       cache.Cache
 	lk      sync.Locker
 }
 
-func (FFProbeProcessor) String() string {
+func (Processor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewFFProbeProcessor(c FFProbeConfig, cm *dms_cache.Manager, l logging.Logger) (p *FFProbeProcessor, err error) {
+func NewProcessor(c Config, cm *dms_cache.Manager, l logging.Logger) (p *Processor, err error) {
 	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
 	}
-	p = &FFProbeProcessor{binPath: realPath,
+	p = &Processor{binPath: realPath,
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c = cm.Create("ffprobe", p.loader)
+	p.c, err = cm.CreatePersistent("ffprobe", p.loader, func() interface{} { return &Info{} })
 	return
 }
 
-func (p *FFProbeProcessor) Process(obj *cds.Object, ctx context.Context) {
+func (p *Processor) Process(obj *cds.Object, ctx context.Context) {
 	t := obj.MimeType.Type
 	if !(t == "audio" || t == "video" || t == "image") {
 		return
@@ -66,13 +64,7 @@ func (p *FFProbeProcessor) Process(obj *cds.Object, ctx context.Context) {
 	}
 }
 
-var tagMap = map[string]string{
-	"artist": didl_lite.TagArtist,
-	"album":  didl_lite.TagAlbum,
-	"genre":  didl_lite.TagGenre,
-}
-
-func (p *FFProbeProcessor) probeObject(obj *cds.Object, ctx context.Context) error {
+func (p *Processor) probeObject(obj *cds.Object, ctx context.Context) error {
 	info, err := p.probePath(obj.FilePath, ctx)
 	if err != nil {
 		return err
@@ -97,7 +89,7 @@ func (p *FFProbeProcessor) probeObject(obj *cds.Object, ctx context.Context) err
 	return nil
 }
 
-func (p *FFProbeProcessor) probeResource(res *cds.Resource, ctx context.Context) error {
+func (p *Processor) probeResource(res *cds.Resource, ctx context.Context) error {
 	info, err := p.probePath(res.FilePath, ctx)
 	if err != nil {
 		return err
@@ -139,13 +131,13 @@ func (p *FFProbeProcessor) probeResource(res *cds.Resource, ctx context.Context)
 	return nil
 }
 
-func (p *FFProbeProcessor) probePath(path string, ctx context.Context) (info ffprobeInfo, err error) {
+func (p *Processor) probePath(path string, ctx context.Context) (info Info, err error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		val, err := p.c.Get(path)
 		if err == nil {
-			info = val.(ffprobeInfo)
+			info = val.(Info)
 		}
 	}()
 	select {
@@ -156,7 +148,7 @@ func (p *FFProbeProcessor) probePath(path string, ctx context.Context) (info ffp
 	return
 }
 
-func (p *FFProbeProcessor) loader(key interface{}) (value interface{}, err error) {
+func (p *Processor) loader(key interface{}) (value interface{}, err error) {
 	p.lk.Lock()
 	defer p.lk.Unlock()
 
@@ -171,64 +163,12 @@ func (p *FFProbeProcessor) loader(key interface{}) (value interface{}, err error
 		return
 	}
 
-	info := ffprobeInfo{}
+	info := Info{}
 	err = json.NewDecoder(bytes.NewReader(output)).Decode(&info)
 	if err == nil {
 		value = info
 	} else {
 		l.Errorf("error unmarshalling: %s\n%s", err.Error(), output)
-	}
-	return
-}
-
-type ffprobeInfo struct {
-	Streams []ffprobeStream `json:"streams"`
-	Format  ffprobeFormat   `json:"format"`
-}
-
-type ffprobeStream struct {
-	CodecName   string        `json:"codec_name"`
-	CodecType   string        `json:"codec_type"`
-	Width       uint          `json:"width"`
-	Height      uint          `json:"height"`
-	SampleRate  integerString `json:"sample_rate"`
-	Channels    uint          `json:"channels"`
-	Disposition struct {
-		Default int `json:"default"`
-	} `json:"disposition"`
-}
-
-type ffprobeFormat struct {
-	Duration floatString       `json:"duration"`
-	Size     integerString     `json:"size"`
-	BitRate  integerString     `json:"bit_rate"`
-	Tags     map[string]string `json:"tags"`
-}
-
-type floatString float64
-
-func (s floatString) Float64() float64 {
-	return float64(s)
-}
-
-func (s *floatString) UnmarshalText(t []byte) (err error) {
-	f, err := strconv.ParseFloat(string(t), 64)
-	if err == nil {
-		(*s) = floatString(f)
-	}
-	return
-}
-
-type integerString int64
-
-func (s integerString) Int64() int64 {
-	return int64(s)
-}
-
-func (s *integerString) UnmarshalText(t []byte) (err error) {
-	i, err := strconv.ParseInt(string(t), 10, 64)
-	if err == nil {
-		(*s) = integerString(i)
 	}
 	return
 }

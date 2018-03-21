@@ -1,11 +1,11 @@
-package processor
+package basic_icon
 
 import (
 	"context"
 	"net/http"
 
 	"github.com/Adirelle/dms/pkg/cds"
-	"github.com/Adirelle/dms/pkg/processor/icons"
+	"github.com/Adirelle/dms/pkg/processor/basic_icon/icons"
 	adi_http "github.com/Adirelle/go-libs/http"
 	assetfs "github.com/elazarl/go-bindata-assetfs"
 
@@ -21,17 +21,17 @@ const (
 	RouteIconTemplate  = "{icon:.*}"
 )
 
-type BasicIconProcessor struct{}
+type Processor struct{}
 
-func (BasicIconProcessor) String() string {
-	return "BasicIconProcessor"
+func (Processor) String() string {
+	return "Processor"
 }
 
-func (b BasicIconProcessor) Process(obj *cds.Object, _ context.Context) {
+func (b Processor) Process(obj *cds.Object, _ context.Context) {
 	obj.Icon = adi_http.NewURLSpec(IconRoute, RouteIconParameter, b.guessIcon(obj))
 }
 
-func (b BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
+func (b Processor) guessIcon(obj *cds.Object) (icon string) {
 	if obj.IsContainer() {
 		return "folder"
 	}
@@ -42,7 +42,7 @@ func (b BasicIconProcessor) guessIcon(obj *cds.Object) (icon string) {
 	return "file"
 }
 
-func (b BasicIconProcessor) Handler() http.Handler {
+func (b Processor) Handler() http.Handler {
 	fs := &assetfs.AssetFS{icons.Asset, icons.AssetDir, icons.AssetInfo, ""}
 	return http.FileServer(fs)
 }

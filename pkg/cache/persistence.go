@@ -123,9 +123,8 @@ type codecSerializer struct {
 	dec     *codec.Decoder
 }
 
-func NewCodecSerializer(f FactoryFunc) Serializer {
+func NewCodecSerializer(f FactoryFunc, h codec.Handle) Serializer {
 	var b []byte
-	h := &codec.JsonHandle{}
 	return &codecSerializer{
 		f,
 		codec.NewEncoderBytes(&b, h),

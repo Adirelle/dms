@@ -19,19 +19,6 @@ type Filesystem struct {
 	lastModTime time.Time
 }
 
-// Object represents either an item or a container of the content directory
-type Object struct {
-	ID       ID
-	FilePath string
-
-	Name    string
-	IsDir   bool
-	Size    int64
-	ModTime time.Time
-
-	ChildrenID []ID
-}
-
 // New creates a new Filesystem based on the passed configuration
 func New(conf Config) (fs *Filesystem, err error) {
 	root, err := filepath.Abs(filepath.Clean(conf.Root))

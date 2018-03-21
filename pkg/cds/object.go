@@ -53,7 +53,7 @@ func guessMimeType(obj *Object) (title string, mimeType types.MIME, err error) {
 
 func (o *Object) AddResource(rs ...Resource) {
 	for _, r := range rs {
-		r.Owner = o
+		r.owner = o
 	}
 	o.Resources = append(o.Resources, rs...)
 }
@@ -138,7 +138,11 @@ type Resource struct {
 	ColorDepth      uint8
 
 	FilePath string
-	Owner    *Object
+	owner    *Object
+}
+
+func (r *Resource) Owner() *Object {
+	return r.owner
 }
 
 func (r *Resource) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Resource, err error) {

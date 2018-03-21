@@ -6,6 +6,7 @@ import (
 	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
 	"github.com/boltdb/bolt"
+	"github.com/ugorji/go/codec"
 )
 
 type Manager struct {
@@ -13,6 +14,7 @@ type Manager struct {
 	Size int
 	TTL  time.Duration
 	L    logging.Logger
+	H    codec.Handle
 
 	caches []cache.Cache
 }
@@ -38,7 +40,7 @@ func (f *Manager) CreatePersistent(name string, l cache.LoaderFunc, ff FactoryFu
 		return f.Create(name, l), nil
 	}
 	log := f.L.Named(name)
-	c, err := NewBoltDBStorage(f.DB, name, NewCodecSerializer(ff), log)
+	c, err := NewBoltDBStorage(f.DB, name, NewCodecSerializer(ff, f.H), log)
 	if err != nil {
 		return nil, err
 	}
