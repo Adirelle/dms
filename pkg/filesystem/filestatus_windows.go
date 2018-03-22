@@ -6,17 +6,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/bluele/gcache"
-
+	"github.com/Adirelle/go-libs/cache"
 	"golang.org/x/sys/windows"
 )
 
 const hiddenAttributes = windows.FILE_ATTRIBUTE_HIDDEN | windows.FILE_ATTRIBUTE_SYSTEM
 
-var hiddenCache gcache.Cache
+var hiddenCache cache.Cache
 
 func init() {
-	hiddenCache = gcache.New(10000).ARC().Expiration(time.Minute).LoaderFunc(doTestHiddenPath).Build()
+	hiddenCache = cache.NewMemoryStorage(
+		cache.Expiration(time.Minute),
+		cache.Loader(doTestHiddenPath),
+	)
 }
 
 func isHiddenPath(path string) (hidden bool, err error) {
