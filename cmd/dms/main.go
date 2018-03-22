@@ -450,7 +450,7 @@ func (c *Container) BasicIconProcessor() *basic_icon.Processor {
 	return &basic_icon.Processor{}
 }
 
-func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) *processor.AlbumArtProcessor {
+func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) (*processor.AlbumArtProcessor, error) {
 	return processor.NewAlbumArtProcessor(fs, cf, c.logger("album-art"))
 }
 

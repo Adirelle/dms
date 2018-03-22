@@ -39,7 +39,7 @@ func NewProcessor(c Config, cm *dms_cache.Manager, l logging.Logger) (p *Process
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c, err = cm.CreatePersistent("ffprobe", p.loader, func() interface{} { return &Info{} })
+	p.c, err = cm.NewCache("ffprobe", p.loader, func() interface{} { return &Info{} })
 	return
 }
 
@@ -51,17 +51,26 @@ func (p *Processor) Process(obj *cds.Object, ctx context.Context) {
 
 	l := logging.MustFromContext(ctx)
 
-	if err := p.probeObject(obj, ctx); err != nil {
-		l.Error(err)
-		return
-	}
+	wg := sync.WaitGroup{}
+	wg.Add(1 + len(obj.Resources))
+
+	go func() {
+		defer wg.Done()
+		if err := p.probeObject(obj, ctx); err != nil {
+			l.Error(err)
+		}
+	}()
 
 	for i := range obj.Resources {
-		if err := p.probeResource(&obj.Resources[i], ctx); err != nil {
-			l.Error(err)
-			return
-		}
+		go func(res *cds.Resource) {
+			defer wg.Done()
+			if err := p.probeResource(res, ctx); err != nil {
+				l.Error(err)
+			}
+		}(&obj.Resources[i])
 	}
+
+	wg.Wait()
 }
 
 func (p *Processor) probeObject(obj *cds.Object, ctx context.Context) error {
@@ -131,13 +140,13 @@ func (p *Processor) probeResource(res *cds.Resource, ctx context.Context) error 
 	return nil
 }
 
-func (p *Processor) probePath(path string, ctx context.Context) (info Info, err error) {
+func (p *Processor) probePath(path string, ctx context.Context) (info *Info, err error) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		val, err := p.c.Get(path)
 		if err == nil {
-			info = val.(Info)
+			info = val.(*Info)
 		}
 	}()
 	select {
@@ -163,8 +172,8 @@ func (p *Processor) loader(key interface{}) (value interface{}, err error) {
 		return
 	}
 
-	info := Info{}
-	err = json.NewDecoder(bytes.NewReader(output)).Decode(&info)
+	info := &Info{}
+	err = json.NewDecoder(bytes.NewReader(output)).Decode(info)
 	if err == nil {
 		value = info
 	} else {

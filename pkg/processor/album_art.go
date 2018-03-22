@@ -22,10 +22,14 @@ type AlbumArtProcessor struct {
 	l  logging.Logger
 }
 
-func NewAlbumArtProcessor(fs *filesystem.Filesystem, cm *dms_cache.Manager, logger logging.Logger) *AlbumArtProcessor {
-	a := &AlbumArtProcessor{fs: fs, l: logger}
-	a.c = cm.Create("album-art", a.loader)
-	return a
+func NewAlbumArtProcessor(
+	fs *filesystem.Filesystem,
+	cm *dms_cache.Manager,
+	logger logging.Logger,
+) (a *AlbumArtProcessor, err error) {
+	a = &AlbumArtProcessor{fs: fs, l: logger}
+	a.c, err = cm.NewCache("album-art", a.loader, func() interface{} { return &adi_http.URLSpec{} })
+	return
 }
 
 func (AlbumArtProcessor) String() string {

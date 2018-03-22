@@ -19,46 +19,29 @@ type Manager struct {
 	caches []cache.Cache
 }
 
-func (f *Manager) Create(name string, l cache.LoaderFunc) cache.Cache {
-	log := f.L.Named(name)
-	c := cache.NewMemoryStorage(cache.Name(name))
+func (f *Manager) NewCache(name string, l cache.LoaderFunc, ff FactoryFunc) (c cache.Cache, err error) {
+	mem := cache.NewMemoryStorage()
+	if f.DB != nil {
+		c, err = NewBoltDBStorage(f.DB, name, f.H, ff)
+		if err != nil {
+			return
+		}
+		c = cache.WriteThrough(mem)(c)
+	} else {
+		c = mem
+	}
+	if f.TTL > 0 {
+		c = cache.Expiration(f.TTL)(c)
+	}
+	c = cache.Loader(l)(c)
+	c = cache.SingleFlight(c)
 	if f.Size > 0 {
 		c = cache.LRUEviction(f.Size)(c)
 	}
-	if f.TTL > 0 {
-		c = cache.Expiration(f.TTL)(c)
-	}
-	c = cache.Loader(l)(c)
-	c = cache.SingleFlight(c)
-	c = cache.Spy(log.Debugf)(c)
-	f.caches = append(f.caches, c)
-	return c
-}
-
-func (f *Manager) CreatePersistent(name string, l cache.LoaderFunc, ff FactoryFunc) (cache.Cache, error) {
-	if f.DB == nil {
-		return f.Create(name, l), nil
-	}
-	log := f.L.Named(name)
-	c, err := NewBoltDBStorage(f.DB, name, NewCodecSerializer(ff, f.H), log)
-	if err != nil {
-		return nil, err
-	}
 	c = cache.Name(name)(c)
-	mem := cache.NewMemoryStorage(cache.Name(name + "-wt"))
-	if f.Size > 0 {
-		c = cache.LRUEviction(f.Size * 2)(c)
-		mem = cache.LRUEviction(f.Size)(mem)
-	}
-	c = cache.WriteThrough(mem)(c)
-	if f.TTL > 0 {
-		c = cache.Expiration(f.TTL)(c)
-	}
-	c = cache.Loader(l)(c)
-	c = cache.SingleFlight(c)
-	c = cache.Spy(log.Debugf)(c)
+	c = cache.Spy(f.L.Named(name).Debugf)(c)
 	f.caches = append(f.caches, c)
-	return c, nil
+	return
 }
 
 func (f *Manager) Flush() {
