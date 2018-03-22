@@ -1,25 +1,29 @@
 package cache
 
 import (
+	"bytes"
+	"encoding/gob"
 	"fmt"
+
+	"go.uber.org/zap/buffer"
 
 	adi_cache "github.com/Adirelle/go-libs/cache"
 	"github.com/boltdb/bolt"
-	"github.com/ugorji/go/codec"
 )
+
+var bufferPool = buffer.NewPool()
 
 type FactoryFunc func() interface{}
 
 type boltDBStorage struct {
 	db     *bolt.DB
 	bucket []byte
-	h      codec.Handle
 	f      FactoryFunc
 	len    int
 }
 
-func NewBoltDBStorage(db *bolt.DB, bucket string, h codec.Handle, f FactoryFunc) (adi_cache.Cache, error) {
-	s := &boltDBStorage{db, []byte(bucket), h, f, 0}
+func NewBoltDBStorage(db *bolt.DB, bucket string, f FactoryFunc) (adi_cache.Cache, error) {
+	s := &boltDBStorage{db, []byte(bucket), f, 0}
 	err := db.Update(func(tx *bolt.Tx) (err error) {
 		b, err := tx.CreateBucketIfNotExists(s.bucket)
 		if err != nil {
@@ -28,6 +32,8 @@ func NewBoltDBStorage(db *bolt.DB, bucket string, h codec.Handle, f FactoryFunc)
 		s.len = b.Stats().KeyN
 		return
 	})
+	v := f()
+	gob.Register(v)
 	return s, err
 }
 
@@ -40,15 +46,16 @@ func (s *boltDBStorage) serialize(key interface{}) []byte {
 
 func (s *boltDBStorage) Put(key, value interface{}) (err error) {
 	bkey := s.serialize(key)
-	var bvalue []byte
-	err = codec.NewEncoderBytes(&bvalue, s.h).Encode(value)
+	bvalue := bufferPool.Get()
+	defer bvalue.Free()
+	err = gob.NewEncoder(bvalue).Encode(value)
 	if err != nil {
 		return
 	}
 
 	return s.db.Batch(func(tx *bolt.Tx) (err error) {
 		b := tx.Bucket(s.bucket)
-		err = b.Put(bkey, bvalue)
+		err = b.Put(bkey, bvalue.Bytes())
 		if err == nil {
 			s.len = b.Stats().KeyN
 		}
@@ -66,7 +73,7 @@ func (s *boltDBStorage) Get(key interface{}) (value interface{}, err error) {
 		}
 
 		value = s.f()
-		return codec.NewDecoderBytes(bvalue, s.h).Decode(value)
+		return gob.NewDecoder(bytes.NewBuffer(bvalue)).Decode(value)
 	})
 	if err != nil {
 		value = nil

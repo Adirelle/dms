@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/boltdb/bolt"
-	"github.com/ugorji/go/codec"
 
 	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
@@ -467,16 +466,11 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 }
 
 func (c *Container) CacheManager(db *bolt.DB) *cache.Manager {
-	h := &codec.CborHandle{}
-	h.StructToArray = true
-	h.ErrorIfNoField = true
-
 	return &cache.Manager{
 		DB:   db,
 		Size: c.Config.Cache.Size,
 		TTL:  c.Config.Cache.TTL,
 		L:    c.logger("caches"),
-		H:    h,
 	}
 }
 
