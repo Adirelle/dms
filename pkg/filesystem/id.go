@@ -1,9 +1,14 @@
 package filesystem
 
 import (
+	"encoding/gob"
 	"errors"
 	"path"
 )
+
+func init() {
+	gob.Register(ID(""))
+}
 
 // ID is an "opaque" identifier for filesystem objects
 type ID string

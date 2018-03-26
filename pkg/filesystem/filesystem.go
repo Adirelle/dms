@@ -52,11 +52,10 @@ func (fs *Filesystem) Get(id ID) (ret *Object, err error) {
 	}
 	ret = &Object{
 		ID:       id,
-		FilePath: fp,
+		FileItem: ItemFromInfo(fp, fi),
 		Name:     fi.Name(),
-		IsDir:    fi.IsDir(),
 		Size:     fi.Size(),
-		ModTime:  fi.ModTime(),
+		IsDir:    fi.IsDir(),
 	}
 	if ret.IsDir {
 		ret.ChildrenID, err = fs.readChildren(id, fp)

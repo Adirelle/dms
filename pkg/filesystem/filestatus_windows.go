@@ -16,8 +16,8 @@ var hiddenCache cache.Cache
 
 func init() {
 	hiddenCache = cache.NewMemoryStorage(
-		cache.Expiration(time.Minute),
 		cache.Loader(doTestHiddenPath),
+		cache.Expiration(time.Minute),
 	)
 }
 

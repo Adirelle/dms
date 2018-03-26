@@ -469,7 +469,6 @@ func (c *Container) CacheManager(db *bolt.DB) *cache.Manager {
 	return &cache.Manager{
 		DB:   db,
 		Size: c.Config.Cache.Size,
-		TTL:  c.Config.Cache.TTL,
 		L:    c.logger("caches"),
 	}
 }

@@ -2,12 +2,12 @@ package processor
 
 import (
 	"context"
+	"encoding/gob"
 	"regexp"
 
-	dms_cache "github.com/Adirelle/dms/pkg/cache"
+	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
-	"github.com/Adirelle/go-libs/cache"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
 )
@@ -18,17 +18,26 @@ var (
 
 type AlbumArtProcessor struct {
 	fs *filesystem.Filesystem
-	c  cache.Cache
+	m  cache.Memo
 	l  logging.Logger
+}
+
+type albumArt struct {
+	filesystem.FileItem
+	URL *adi_http.URLSpec
+}
+
+func init() {
+	gob.Register(albumArt{})
 }
 
 func NewAlbumArtProcessor(
 	fs *filesystem.Filesystem,
-	cm *dms_cache.Manager,
+	cm *cache.Manager,
 	logger logging.Logger,
 ) (a *AlbumArtProcessor, err error) {
 	a = &AlbumArtProcessor{fs: fs, l: logger}
-	a.c, err = cm.NewCache("album-art", a.loader, func() interface{} { return &adi_http.URLSpec{} })
+	a.m, err = cm.NewMemo("album-art", albumArt{}, a.loader)
 	return
 }
 
@@ -42,23 +51,23 @@ func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
 		parentID = parentID.ParentID()
 	}
 
-	uri, err := a.c.Get(parentID)
-	if uri != nil {
-		obj.AlbumArtURI = uri.(*adi_http.URLSpec)
-	} else if err != nil {
-		logging.MustFromContext(ctx).Named("album-art").Warn(err)
+	data := <-a.m.Get(parentID)
+	if data != nil {
+		obj.AlbumArtURI = data.(*albumArt).URL
 	}
 }
 
-func (a *AlbumArtProcessor) loader(key interface{}) (res interface{}, err error) {
+func (a *AlbumArtProcessor) loader(key interface{}) (interface{}, error) {
 	parentID := key.(filesystem.ID)
 	a.l.Debugf("processing: %v", parentID)
 
 	parent, err := a.fs.Get(parentID)
 	if err != nil {
 		a.l.Warnf("error getting parent %s: %s", parentID, err)
-		return
+		return nil, err
 	}
+
+	aa := &albumArt{parent.FileItem, nil}
 
 	a.l.Debugf("%d children", len(parent.ChildrenID))
 	for _, childID := range parent.ChildrenID {
@@ -66,11 +75,10 @@ func (a *AlbumArtProcessor) loader(key interface{}) (res interface{}, err error)
 			a.l.Debugf("ignoring: %s", childID)
 			continue
 		}
-		res = cds.FileServerURLSpec(childID)
-		a.l.Debugf("result: %v", res)
-		return
+		aa.URL = cds.FileServerURLSpec(childID)
+		break
 	}
 
-	a.l.Debugf("nothing found")
-	return
+	a.l.Debugf("result: %v", aa.URL)
+	return aa, nil
 }

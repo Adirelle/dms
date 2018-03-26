@@ -8,9 +8,10 @@ import (
 	"sync"
 	"time"
 
-	dms_cache "github.com/Adirelle/dms/pkg/cache"
+	"github.com/Adirelle/dms/pkg/filesystem"
+
+	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
-	"github.com/Adirelle/go-libs/cache"
 	"github.com/Adirelle/go-libs/logging"
 )
 
@@ -22,7 +23,7 @@ type Config struct {
 type Processor struct {
 	binPath string
 	l       logging.Logger
-	c       cache.Cache
+	m       cache.Memo
 	lk      sync.Locker
 }
 
@@ -30,7 +31,7 @@ func (Processor) String() string {
 	return "FFProbeProcessor"
 }
 
-func NewProcessor(c Config, cm *dms_cache.Manager, l logging.Logger) (p *Processor, err error) {
+func NewProcessor(c Config, cm *cache.Manager, l logging.Logger) (p *Processor, err error) {
 	realPath, err := exec.LookPath(c.BinPath)
 	if err != nil {
 		return
@@ -39,7 +40,7 @@ func NewProcessor(c Config, cm *dms_cache.Manager, l logging.Logger) (p *Process
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.c, err = cm.NewCache("ffprobe", p.loader, func() interface{} { return &Info{} })
+	p.m, err = cm.NewMemo("ffprobe", Info{}, p.loader)
 	return
 }
 
@@ -140,21 +141,13 @@ func (p *Processor) probeResource(res *cds.Resource, ctx context.Context) error 
 	return nil
 }
 
-func (p *Processor) probePath(path string, ctx context.Context) (info *Info, err error) {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		val, err := p.c.Get(path)
-		if err == nil {
-			info = val.(*Info)
-		}
-	}()
+func (p *Processor) probePath(path string, ctx context.Context) (*Info, error) {
 	select {
-	case <-done:
+	case res := <-p.m.Get(path):
+		return res.(*Info), nil
 	case <-ctx.Done():
-		err = ctx.Err()
+		return nil, ctx.Err()
 	}
-	return
 }
 
 func (p *Processor) loader(key interface{}) (value interface{}, err error) {
@@ -163,6 +156,10 @@ func (p *Processor) loader(key interface{}) (value interface{}, err error) {
 
 	filePath := key.(string)
 	l := p.l.With("path", filePath)
+	fi, err := filesystem.ItemFromPath(filePath)
+	if err != nil {
+		return
+	}
 
 	cmd := exec.Command(p.binPath, "-i", filePath, "-of", "json", "-v", "error", "-show_format", "-show_streams")
 
@@ -172,14 +169,14 @@ func (p *Processor) loader(key interface{}) (value interface{}, err error) {
 		return
 	}
 
-	info := &Info{}
+	info := &Info{FileItem: fi}
 	err = json.NewDecoder(bytes.NewReader(output)).Decode(info)
-	if err == nil {
-		value = info
-	} else {
+	if err != nil {
 		l.Errorf("error unmarshalling: %s\n%s", err.Error(), output)
+		return
 	}
-	return
+
+	return info, nil
 }
 
 type concurrencyLock chan struct{}

@@ -1,10 +1,18 @@
 package ffprobe
 
 import (
+	"encoding/gob"
 	"strconv"
+
+	"github.com/Adirelle/dms/pkg/filesystem"
 )
 
+func init() {
+	gob.RegisterName("ffprobe.Info", Info{})
+}
+
 type Info struct {
+	filesystem.FileItem
 	Streams []Stream `json:"streams"`
 	Format  Format   `json:"format"`
 }

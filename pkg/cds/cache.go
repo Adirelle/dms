@@ -2,58 +2,53 @@ package cds
 
 import (
 	"context"
+	"encoding/gob"
 	"time"
 
-	dms_cache "github.com/Adirelle/dms/pkg/cache"
+	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/filesystem"
-	"github.com/Adirelle/go-libs/cache"
+	"github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
 )
 
 const LoaderTimeout = 5 * time.Second
 
+func init() {
+	gob.Register(Object{})
+	gob.Register(http.URLSpec{})
+}
+
 type Cache struct {
 	ContentDirectory
-	c   cache.Cache
+	m   cache.Memo
 	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, cm *dms_cache.Manager, l logging.Logger) (*Cache, error) {
+func NewCache(d ContentDirectory, cm *cache.Manager, l logging.Logger) (*Cache, error) {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
 	var err error
-	c.c, err = cm.NewCache("cds", c.loader, func() interface{} { return &Object{} })
+	c.m, err = cm.NewMemo("cds", Object{}, c.loader)
 	return c, err
 }
 
-func (c *Cache) Get(id filesystem.ID, ctx context.Context) (obj *Object, err error) {
-	ch := make(chan struct{})
-	go func() {
-		defer close(ch)
-		val, cerr := c.c.Get(id)
-		if val != nil && cerr == nil {
-			obj = val.(*Object)
-		} else {
-			err = cerr
-		}
-	}()
+func (c *Cache) Get(id filesystem.ID, ctx context.Context) (*Object, error) {
 	select {
-	case <-ch:
+	case res := <-c.m.Get(id):
+		return res.(*Object), nil
 	case <-ctx.Done():
-		err = ctx.Err()
+		return nil, ctx.Err()
 	}
-	return
 }
 
-func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) (objs []*Object, err error) {
+func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) ([]*Object, error) {
 	return getChildren(c, id, ctx)
 }
 
 func (c *Cache) loader(key interface{}) (obj interface{}, err error) {
-	local, cancel := context.WithTimeout(c.ctx, LoaderTimeout)
-	defer cancel()
+	local, _ := context.WithTimeout(c.ctx, LoaderTimeout)
 	obj, err = c.ContentDirectory.Get(key.(filesystem.ID), local)
 	return
 }
