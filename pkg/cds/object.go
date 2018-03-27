@@ -10,7 +10,7 @@ import (
 	"github.com/Adirelle/dms/pkg/filesystem"
 	"github.com/Adirelle/go-libs/http"
 	"github.com/h2non/filetype"
-	types "gopkg.in/h2non/filetype.v1/types"
+	"gopkg.in/h2non/filetype.v1/types"
 )
 
 var FolderType = types.NewMIME("application/vnd.container")

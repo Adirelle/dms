@@ -13,32 +13,28 @@ type Manager struct {
 	storages []Storage
 }
 
-func (m *Manager) NewMemo(name string, sample interface{}, l LoaderFunc) (Memo, error) {
-	s, err := m.NewStorage(name, sample)
-	if err != nil {
-		return nil, err
-	}
-	return &memo{s, l, new(singleFlight), m.L.Named(name)}, nil
+func (m *Manager) NewMemo(name string, sample interface{}, l LoaderFunc) Memo {
+	s := m.NewStorage(name, sample)
+	return &memo{s, l, new(singleFlight), m.L.Named(name)}
 }
 
-func (m *Manager) NewStorage(name string, sample interface{}) (Storage, error) {
+func (m *Manager) NewStorage(name string, sample interface{}) Storage {
 	mem := NewMapStorage()
 	if m.DB == nil {
 		m.storages = append(m.storages, mem)
-		return mem, nil
+		return mem
 	}
-	dbs, err := NewBoltDBStorage(m.DB, name, sample, m.L.Named(name))
-	if err != nil {
-		return nil, err
-	}
+	dbs := NewBoltDBStorage(m.DB, name, sample, m.L.Named(name))
 	cbs := &CombinedStorage{mem, dbs}
 	m.storages = append(m.storages, cbs)
-	return cbs, nil
+	return cbs
 }
 
 func (m *Manager) Flush() {
 	m.L.Info("flushing")
 	for _, s := range m.storages {
-		s.Flush()
+		if fl, ok := s.(Flusher); ok {
+			fl.Flush()
+		}
 	}
 }

@@ -21,8 +21,10 @@ type Storage interface {
 	Store(key, value interface{})
 	Fetch(key interface{}) interface{}
 	Delete(key interface{})
+}
+
+type Flusher interface {
 	Flush()
-	Len() int
 }
 
 type boltDBStorage struct {
@@ -30,20 +32,11 @@ type boltDBStorage struct {
 	bucket []byte
 	t      reflect.Type
 	l      logging.Logger
-	len    int
 }
 
-func NewBoltDBStorage(db *bolt.DB, bucket string, sample interface{}, l logging.Logger) (Storage, error) {
-	s := &boltDBStorage{db, []byte(bucket), reflect.ValueOf(sample).Type(), l, 0}
-	err := db.Update(func(tx *bolt.Tx) (err error) {
-		b, err := tx.CreateBucketIfNotExists(s.bucket)
-		if err != nil {
-			return
-		}
-		s.len = b.Stats().KeyN
-		return
-	})
-	return s, err
+func NewBoltDBStorage(db *bolt.DB, bucket string, sample interface{}, l logging.Logger) Storage {
+	s := &boltDBStorage{db, []byte(bucket), reflect.ValueOf(sample).Type(), l}
+	return s
 }
 
 func (s *boltDBStorage) serializeKey(key interface{}) (bkey []byte) {
@@ -94,52 +87,39 @@ func (s *boltDBStorage) Store(key, value interface{}) {
 	defer bvalue.Free()
 	bkey := s.serializeKey(key)
 
-	s.batch(func(tx *bolt.Tx) {
-		b := tx.Bucket(s.bucket)
-		if err := b.Put(bkey, bvalue.Bytes()); err == nil {
-			s.len = b.Stats().KeyN
-		}
+	s.batch(func(tx *bolt.Tx) error {
+		return tx.Bucket(s.bucket).Put(bkey, bvalue.Bytes())
 	})
 }
 
-// Get reads directely the entry in the internal buffer.
+// Get reads directly the entry in the internal buffer.
 func (s *boltDBStorage) Fetch(key interface{}) (value interface{}) {
 	bkey := s.serializeKey(key)
-	s.view(func(tx *bolt.Tx) {
+	s.view(func(tx *bolt.Tx) error {
 		bvalue := tx.Bucket(s.bucket).Get(bkey)
 		if bvalue != nil {
 			value = s.unserialize(bvalue)
 		}
+		return nil
 	})
 	return
 }
 
 func (s *boltDBStorage) Delete(key interface{}) {
 	bkey := s.serializeKey(key)
-	s.batch(func(tx *bolt.Tx) {
-		b := tx.Bucket(s.bucket)
-		if err := b.Delete(bkey); err == nil {
-			s.len = b.Stats().KeyN
-		}
+	s.batch(func(tx *bolt.Tx) error {
+		return tx.Bucket(s.bucket).Delete(bkey)
 	})
 }
 
-func (s *boltDBStorage) view(fn func(tx *bolt.Tx)) {
-	err := s.db.View(func(tx *bolt.Tx) error {
-		fn(tx)
-		return nil
-	})
-	if err != nil {
+func (s *boltDBStorage) view(fn func(tx *bolt.Tx) error) {
+	if err := s.db.View(fn); err != nil {
 		s.l.Error(err)
 	}
 }
 
-func (s *boltDBStorage) batch(fn func(tx *bolt.Tx)) {
-	err := s.db.Batch(func(tx *bolt.Tx) error {
-		fn(tx)
-		return nil
-	})
-	if err != nil {
+func (s *boltDBStorage) batch(fn func(tx *bolt.Tx) error) {
+	if err := s.db.Batch(fn); err != nil {
 		s.l.Error(err)
 	}
 }
@@ -148,10 +128,6 @@ func (s *boltDBStorage) Flush() {
 	if err := s.db.Sync(); err != nil {
 		s.l.Error(err)
 	}
-}
-
-func (s *boltDBStorage) Len() int {
-	return s.len
 }
 
 type mapStorage struct {
@@ -181,14 +157,6 @@ func (s *mapStorage) Delete(key interface{}) {
 	delete(s.entries, key)
 }
 
-func (s *mapStorage) Flush() {}
-
-func (s *mapStorage) Len() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return len(s.entries)
-}
-
 type CombinedStorage struct {
 	FstLevel Storage
 	SndLevel Storage
@@ -216,10 +184,10 @@ func (s *CombinedStorage) Delete(key interface{}) {
 }
 
 func (s *CombinedStorage) Flush() {
-	s.SndLevel.Flush()
-	s.FstLevel.Flush()
-}
-
-func (s *CombinedStorage) Len() int {
-	return s.SndLevel.Len()
+	if fl, ok := s.FstLevel.(Flusher); ok {
+		fl.Flush()
+	}
+	if fl, ok := s.SndLevel.(Flusher); ok {
+		fl.Flush()
+	}
 }

@@ -24,14 +24,13 @@ type Cache struct {
 	ctx context.Context
 }
 
-func NewCache(d ContentDirectory, cm *cache.Manager, l logging.Logger) (*Cache, error) {
+func NewCache(d ContentDirectory, cm *cache.Manager, l logging.Logger) *Cache {
 	c := &Cache{
 		ContentDirectory: d,
 		ctx:              logging.WithLogger(context.Background(), l),
 	}
-	var err error
-	c.m, err = cm.NewMemo("cds", Object{}, c.loader)
-	return c, err
+	c.m = cm.NewMemo("cds", Object{}, c.loader)
+	return c
 }
 
 func (c *Cache) Get(id filesystem.ID, ctx context.Context) (*Object, error) {

@@ -36,8 +36,8 @@ import (
 	"github.com/Adirelle/go-libs/logging"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
-	uuid "github.com/satori/go.uuid"
-	suture "gopkg.in/thejerf/suture.v2"
+	"github.com/satori/go.uuid"
+	"gopkg.in/thejerf/suture.v2"
 )
 
 var ServerToken = fmt.Sprintf("%s/1.0 DLNADOC/1.50 UPnP/2.0 DMS/1.0", strings.Title(runtime.GOOS))
@@ -410,7 +410,7 @@ func (c *Container) FileServer(dir *cds.FilesystemContentDirectory) *cds.FileSer
 	return cds.NewFileServer(dir)
 }
 
-func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Manager) (cds.ContentDirectory, error) {
+func (c *Container) ContentDirectory(dir *cds.ProcessingDirectory, cf *cache.Manager) cds.ContentDirectory {
 	return cds.NewCache(dir, cf, c.logger("cd-cache"))
 }
 
@@ -449,7 +449,7 @@ func (c *Container) BasicIconProcessor() *basic_icon.Processor {
 	return &basic_icon.Processor{}
 }
 
-func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) (*processor.AlbumArtProcessor, error) {
+func (c *Container) AlbumArtProcessor(fs *filesystem.Filesystem, cf *cache.Manager) *processor.AlbumArtProcessor {
 	return processor.NewAlbumArtProcessor(fs, cf, c.logger("album-art"))
 }
 

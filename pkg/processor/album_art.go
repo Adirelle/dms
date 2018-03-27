@@ -31,13 +31,9 @@ func init() {
 	gob.Register(albumArt{})
 }
 
-func NewAlbumArtProcessor(
-	fs *filesystem.Filesystem,
-	cm *cache.Manager,
-	logger logging.Logger,
-) (a *AlbumArtProcessor, err error) {
+func NewAlbumArtProcessor(fs *filesystem.Filesystem, cm *cache.Manager, logger logging.Logger) (a *AlbumArtProcessor) {
 	a = &AlbumArtProcessor{fs: fs, l: logger}
-	a.m, err = cm.NewMemo("album-art", albumArt{}, a.loader)
+	a.m = cm.NewMemo("album-art", albumArt{}, a.loader)
 	return
 }
 

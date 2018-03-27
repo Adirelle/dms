@@ -40,7 +40,7 @@ func NewProcessor(c Config, cm *cache.Manager, l logging.Logger) (p *Processor, 
 		l:  l,
 		lk: concurrencyLock(make(chan struct{}, c.Limit)),
 	}
-	p.m, err = cm.NewMemo("ffprobe", Info{}, p.loader)
+	p.m = cm.NewMemo("ffprobe", Info{}, p.loader)
 	return
 }
 
