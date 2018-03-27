@@ -7,10 +7,7 @@ import (
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/processor/basic_icon/icons"
 	adi_http "github.com/Adirelle/go-libs/http"
-	"github.com/elazarl/go-bindata-assetfs"
-
-	// go-bindata is used to generate assets*.go
-	_ "github.com/jteeuwen/go-bindata"
+	assetfs "github.com/elazarl/go-bindata-assetfs"
 )
 
 //go:generate go-bindata -o icons/icons.generated.go -pkg icons -ignore .*\.go -nocompress -prefix icons/ icons/...

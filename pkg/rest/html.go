@@ -12,9 +12,6 @@ import (
 
 	"github.com/Adirelle/dms/pkg/rest/templates"
 	adi_http "github.com/Adirelle/go-libs/http"
-
-	// go-bindata is used to generate templates/templates*.go
-	_ "github.com/jteeuwen/go-bindata"
 )
 
 //go:generate go-bindata -o templates/templates.generated.go       -tags !debug -pkg templates -ignore .*\.go -prefix templates/ templates/...

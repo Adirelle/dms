@@ -24,6 +24,7 @@
 #   go-tests = true
 #   unused-packages = true
 
+required = ["github.com/jteeuwen/go-bindata/go-bindata"]
 
 [[constraint]]
   branch = "master"
