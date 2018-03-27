@@ -56,7 +56,7 @@ required = ["github.com/jteeuwen/go-bindata/go-bindata"]
 
 [[constraint]]
   name = "github.com/jteeuwen/go-bindata"
-  version = "3.0.7"
+  branch = "master"
 
 [[constraint]]
   name = "github.com/satori/go.uuid"
