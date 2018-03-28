@@ -68,11 +68,9 @@ func main() {
 		Cache: struct {
 			DBPath string
 			Size   int
-			TTL    time.Duration
 		}{
 			".dms.db",
 			10000,
-			time.Minute,
 		},
 	}
 
@@ -140,7 +138,6 @@ type Config struct {
 	Cache          struct {
 		DBPath string
 		Size   int
-		TTL    time.Duration
 	}
 }
 
