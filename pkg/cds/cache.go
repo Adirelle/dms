@@ -46,8 +46,8 @@ func (c *Cache) GetChildren(id filesystem.ID, ctx context.Context) ([]*Object, e
 	return getChildren(c, id, ctx)
 }
 
-func (c *Cache) loader(key interface{}) (obj interface{}, err error) {
-	local, _ := context.WithTimeout(c.ctx, LoaderTimeout)
-	obj, err = c.ContentDirectory.Get(key.(filesystem.ID), local)
-	return
+func (c *Cache) loader(key interface{}) (interface{}, error) {
+	local, cancel := context.WithTimeout(c.ctx, LoaderTimeout)
+	defer cancel()
+	return c.ContentDirectory.Get(key.(filesystem.ID), local)
 }
