@@ -36,6 +36,17 @@ type boltDBStorage struct {
 
 func NewBoltDBStorage(db *bolt.DB, bucket string, sample interface{}, l logging.Logger) Storage {
 	s := &boltDBStorage{db, []byte(bucket), reflect.ValueOf(sample).Type(), l}
+	err := db.Update(func(tx *bolt.Tx) error {
+		b, err := tx.CreateBucketIfNotExists(s.bucket)
+		if err == nil {
+			st := b.Stats()
+			s.l.Infof("%d entries in bucket %q", st.KeyN, bucket)
+		}
+		return err
+	})
+	if err != nil {
+		panic(err)
+	}
 	return s
 }
 
