@@ -4,36 +4,29 @@ package filesystem
 
 import (
 	"path/filepath"
-	"time"
 
-	"github.com/Adirelle/go-libs/cache"
+	"github.com/Adirelle/dms/pkg/cache"
 	"golang.org/x/sys/windows"
 )
 
 const hiddenAttributes = windows.FILE_ATTRIBUTE_HIDDEN | windows.FILE_ATTRIBUTE_SYSTEM
 
-var hiddenCache cache.Cache
+var sf = new(cache.SingleFlight)
 
-func init() {
-	hiddenCache = cache.NewMemoryStorage(
-		cache.Loader(doTestHiddenPath),
-		cache.Expiration(time.Minute),
-	)
-}
-
-func isHiddenPath(path string) (hidden bool, err error) {
-	val, err := hiddenCache.Get(filepath.Clean(path))
-	if err == nil {
-		hidden = val.(bool)
+func isHiddenPath(path string) (bool, error) {
+	path, err := filepath.Abs(filepath.Clean(path))
+	if err != nil {
+		return false, err
 	}
-	return
+	ch := sf.Do(path, doTestHiddenPath)
+	return (<-ch).(bool), nil
 }
 
-func doTestHiddenPath(key interface{}) (res interface{}, err error) {
+func doTestHiddenPath(key interface{}) (res interface{}, ok bool) {
 	path := (key.(string))
 	if path == filepath.VolumeName(path)+"\\" {
 		// Volumes always have the "SYSTEM" flag, so do not even test them
-		return false, nil
+		return false, true
 	}
 	winPath, err := windows.UTF16PtrFromString(path)
 	if err != nil {
@@ -44,9 +37,12 @@ func doTestHiddenPath(key interface{}) (res interface{}, err error) {
 		return
 	}
 	if attrs&hiddenAttributes == 0 {
-		return isHiddenPath(filepath.Dir(path))
+		res, err = isHiddenPath(filepath.Dir(path))
+		if err != nil {
+			return
+		}
 	}
-	return false, nil
+	return false, true
 }
 
 func isReadablePath(path string) (bool, error) {

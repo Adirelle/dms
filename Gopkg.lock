@@ -5,7 +5,6 @@
   branch = "master"
   name = "github.com/Adirelle/go-libs"
   packages = [
-    "cache",
     "dic",
     "http",
     "logging"
@@ -132,6 +131,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "58500059bf09346466e016367b0fbead61ee96b43381b88172613a4805bfa972"
+  inputs-digest = "8cb4783aa992c766a4c824e1b3d25e47d4d569246633a67ca3efd12411ffe0d8"
   solver-name = "gps-cdcl"
   solver-version = 1

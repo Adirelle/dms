@@ -15,7 +15,7 @@ type Manager struct {
 
 func (m *Manager) NewMemo(name string, sample interface{}, l LoaderFunc) Memo {
 	s := m.NewStorage(name, sample)
-	return &memo{s, l, new(singleFlight), m.L.Named(name)}
+	return &memo{s, l, new(SingleFlight), m.L.Named(name)}
 }
 
 func (m *Manager) NewStorage(name string, sample interface{}) Storage {

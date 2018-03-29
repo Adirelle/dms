@@ -4,18 +4,18 @@ import (
 	"sync"
 )
 
-type singleFlight struct {
+type SingleFlight struct {
 	calls sync.Map
 }
 
-func (f *singleFlight) Do(key interface{}, fn func() (interface{}, bool)) <-chan interface{} {
+func (f *SingleFlight) Do(key interface{}, fn func(interface{}) (interface{}, bool)) <-chan interface{} {
 	ch := make(chan interface{}, 1)
 	c := &call{}
 	if c2, loaded := f.calls.LoadOrStore(key, c); loaded {
 		c = c2.(*call)
 	} else {
 		go func() {
-			c.Run(fn)
+			c.Run(func() (interface{}, bool) { return fn(key) })
 			f.calls.Delete(key)
 		}()
 	}

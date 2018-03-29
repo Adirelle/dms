@@ -15,12 +15,12 @@ type IsFresher interface {
 type memo struct {
 	Storage
 	f LoaderFunc
-	*singleFlight
+	*SingleFlight
 	logging.Logger
 }
 
 func (m *memo) Get(key interface{}) <-chan interface{} {
-	return m.Do(key, func() (interface{}, bool) { return m.load(key) })
+	return m.Do(key, m.load)
 }
 
 func (m *memo) load(key interface{}) (interface{}, bool) {
