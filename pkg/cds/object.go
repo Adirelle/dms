@@ -125,9 +125,9 @@ func (o *Object) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Object, e
 }
 
 type Resource struct {
-	URL      *http.URLSpec
-	Size     uint64
-	MimeType types.MIME
+	URL  *http.URLSpec
+	Size uint64
+	ProtocolInfo
 
 	Duration        time.Duration
 	Bitrate         uint32
@@ -151,7 +151,7 @@ func (r *Resource) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Resourc
 		return
 	}
 	res = didl_lite.Resource{
-		ProtocolInfo: fmt.Sprintf("http-get:*:%s:*", r.MimeType.Value),
+		ProtocolInfo: r.ProtocolInfo.String(),
 		URI:          url,
 	}
 	res.SetTag(didl_lite.ResSize, strconv.FormatUint(r.Size, 10))
@@ -179,4 +179,32 @@ func (r *Resource) MarshalDIDLLite(gen http.URLGenerator) (res didl_lite.Resourc
 	}
 
 	return
+}
+
+type ProtocolInfo struct {
+	MimeType       types.MIME
+	AdditionalInfo map[AddInfoKey]string
+}
+
+func (p ProtocolInfo) String() string {
+	contentFormat := "*"
+	if p.MimeType.Value != "" {
+		contentFormat = p.MimeType.Value
+	}
+	additionalInfo := "*"
+	if p.AdditionalInfo != nil {
+		flags := make([]string, len(p.AdditionalInfo))
+		i := 0
+		for k, v := range p.AdditionalInfo {
+			flags[i] = fmt.Sprintf("%s_%s=%s", k.OrgName, k.Token, v)
+			i++
+		}
+		additionalInfo = strings.Join(flags, ";")
+	}
+	return fmt.Sprintf("http-get:*:%s:%s", contentFormat, additionalInfo)
+}
+
+type AddInfoKey struct {
+	OrgName string
+	Token   string
 }

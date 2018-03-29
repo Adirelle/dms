@@ -93,10 +93,10 @@ func (s *FileServer) ServeObject(w http.ResponseWriter, r *http.Request, obj *Ob
 func (s *FileServer) Process(obj *Object, _ context.Context) {
 	if !obj.IsContainer() {
 		obj.AddResource(Resource{
-			URL:      FileServerURLSpec(obj.ID),
-			Size:     uint64(obj.Size),
-			MimeType: obj.MimeType,
-			FilePath: obj.FilePath,
+			URL:          FileServerURLSpec(obj.ID),
+			Size:         uint64(obj.Size),
+			ProtocolInfo: ProtocolInfo{MimeType: obj.MimeType},
+			FilePath:     obj.FilePath,
 		})
 	}
 }
