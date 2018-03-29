@@ -8,7 +8,7 @@ import (
 	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
-	adi_http "github.com/Adirelle/go-libs/http"
+	"github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
 )
 
@@ -24,7 +24,7 @@ type AlbumArtProcessor struct {
 
 type albumArt struct {
 	filesystem.FileItem
-	URL *adi_http.URLSpec
+	filesystem.ID
 }
 
 func init() {
@@ -42,15 +42,25 @@ func (AlbumArtProcessor) String() string {
 }
 
 func (a *AlbumArtProcessor) Process(obj *cds.Object, ctx context.Context) {
+	if coverRegex.MatchString(obj.Name) {
+		return
+	}
+
 	parentID := obj.ID
 	if !obj.IsContainer() {
 		parentID = parentID.ParentID()
 	}
 
 	data := <-a.m.Get(parentID)
-	if data != nil {
-		obj.AlbumArtURI = data.(*albumArt).URL
+	if data == nil {
+		return
 	}
+	aa := data.(*albumArt)
+	if aa.ID.IsNull() {
+		return
+	}
+
+	obj.AlbumArtURI = http.NewURLSpec(cds.FileServerRoute, cds.RouteObjectIDParameter, aa.ID.String())
 }
 
 func (a *AlbumArtProcessor) loader(key interface{}) (interface{}, error) {
@@ -63,7 +73,7 @@ func (a *AlbumArtProcessor) loader(key interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	aa := &albumArt{parent.FileItem, nil}
+	aa := &albumArt{parent.FileItem, filesystem.NullID}
 
 	a.l.Debugf("%d children", len(parent.ChildrenID))
 	for _, childID := range parent.ChildrenID {
@@ -71,10 +81,10 @@ func (a *AlbumArtProcessor) loader(key interface{}) (interface{}, error) {
 			a.l.Debugf("ignoring: %s", childID)
 			continue
 		}
-		aa.URL = cds.FileServerURLSpec(childID)
+		aa.ID = childID
 		break
 	}
 
-	a.l.Debugf("result: %v", aa.URL)
+	a.l.Debugf("result: %v", aa.ID)
 	return aa, nil
 }
