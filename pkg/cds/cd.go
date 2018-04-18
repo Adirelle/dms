@@ -3,7 +3,6 @@ package cds
 import (
 	"context"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/Adirelle/dms/pkg/filesystem"
@@ -53,30 +52,19 @@ func getChildren(d ContentDirectory, id filesystem.ID, ctx context.Context) (chi
 	}
 	children = make([]*Object, 0, len(parent.ChildrenID))
 
-	wg := sync.WaitGroup{}
-	wg.Add(len(parent.ChildrenID))
-	ch := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(ch)
-	}()
-
 	for _, id := range parent.ChildrenID {
-		go func(id filesystem.ID) {
-			defer wg.Done()
-			if child, cerr := d.Get(id, ctx); cerr == nil {
-				children = append(children, child)
-			} else {
-				err = cerr
-			}
-		}(id)
+		var child *Object
+		if child, err = d.Get(id, ctx); err != nil {
+			return
+		}
+		children = append(children, child)
 	}
 
 	select {
 	case <-ctx.Done():
 		err = ctx.Err()
 		return
-	case <-ch:
+	default:
 	}
 
 	sort.Sort(sortableObjectList(children))

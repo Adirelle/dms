@@ -11,7 +11,7 @@ import (
 
 const hiddenAttributes = windows.FILE_ATTRIBUTE_HIDDEN | windows.FILE_ATTRIBUTE_SYSTEM
 
-var sf = new(cache.SingleFlight)
+var sf = cache.NewSingleFlight()
 
 func isHiddenPath(path string) (bool, error) {
 	path, err := filepath.Abs(filepath.Clean(path))

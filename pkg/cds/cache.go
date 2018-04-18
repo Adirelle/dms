@@ -3,6 +3,7 @@ package cds
 import (
 	"context"
 	"encoding/gob"
+	"fmt"
 	"time"
 
 	"github.com/Adirelle/dms/pkg/cache"
@@ -35,8 +36,11 @@ func NewCache(d ContentDirectory, cm *cache.Manager, l logging.Logger) *Cache {
 
 func (c *Cache) Get(id filesystem.ID, ctx context.Context) (*Object, error) {
 	select {
-	case res := <-c.m.Get(id):
-		return res.(*Object), nil
+	case res, ok := <-c.m.Get(id):
+		if ok {
+			return res.(*Object), nil
+		}
+		return nil, fmt.Errorf("could not fetch %q", id)
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
