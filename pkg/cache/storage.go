@@ -12,7 +12,7 @@ import (
 
 	"go.uber.org/zap/buffer"
 
-	"github.com/boltdb/bolt"
+	bolt "github.com/coreos/bbolt"
 )
 
 var bufferPool = buffer.NewPool()

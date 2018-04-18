@@ -2,7 +2,7 @@ package cache
 
 import (
 	"github.com/Adirelle/go-libs/logging"
-	"github.com/boltdb/bolt"
+	bolt "github.com/coreos/bbolt"
 )
 
 type Manager struct {

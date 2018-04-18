@@ -12,10 +12,10 @@
   revision = "ed3cc772bb2f2e47582c61270dc7bea7db3b7361"
 
 [[projects]]
-  name = "github.com/boltdb/bolt"
+  name = "github.com/coreos/bbolt"
   packages = ["."]
-  revision = "2f1ce7a837dcb8da3ec595b1dac9d0632f0f99e8"
-  version = "v1.3.1"
+  revision = "48ea1b39c25fc1bab3506fbc712ecbaa842c4d2d"
+  version = "v1.3.1-coreos.6"
 
 [[projects]]
   name = "github.com/elazarl/go-bindata-assetfs"
@@ -131,6 +131,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8cb4783aa992c766a4c824e1b3d25e47d4d569246633a67ca3efd12411ffe0d8"
+  inputs-digest = "804e71eb17b21fb9c2bc8c4717f40fcd3248f7e4284356e39b9caa944f0bb07e"
   solver-name = "gps-cdcl"
   solver-version = 1

@@ -20,8 +20,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/boltdb/bolt"
-
 	"github.com/Adirelle/dms/pkg/cache"
 	"github.com/Adirelle/dms/pkg/cds"
 	"github.com/Adirelle/dms/pkg/filesystem"
@@ -34,6 +32,7 @@ import (
 	"github.com/Adirelle/go-libs/dic"
 	adi_http "github.com/Adirelle/go-libs/http"
 	"github.com/Adirelle/go-libs/logging"
+	bolt "github.com/coreos/bbolt"
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
 	"github.com/satori/go.uuid"
