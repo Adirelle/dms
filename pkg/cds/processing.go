@@ -33,7 +33,7 @@ func (d *ProcessingDirectory) Get(id filesystem.ID, ctx context.Context) (obj *O
 			proc.Process(obj, ctx)
 		})
 		if p != nil {
-			l.Error(p)
+			return nil, p
 		}
 	}
 	return
