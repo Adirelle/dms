@@ -10,7 +10,7 @@ import (
 // Config holds the configuration parameters
 type Config struct {
 	// Root of the filesystem, a.k.a. directory to serve
-	Root string
+	Root string `json:"path"`
 }
 
 // Filesystem is the main entry point

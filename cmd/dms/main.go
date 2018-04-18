@@ -58,7 +58,7 @@ func main() {
 		Config:         filesystem.Config{Root: "."},
 		Interface:      Interface{},
 		NotifyInterval: 30 * time.Minute,
-		HTTP:           &net.TCPAddr{Port: 1338},
+		HTTP:           tcpAddrVar{&net.TCPAddr{Port: 1338}},
 		Logging:        logging.DefaultConfig(),
 		FFProbe: ffprobe.Config{
 			BinPath: "ffprobe",
@@ -128,23 +128,23 @@ func main() {
 }
 
 type Config struct {
-	FriendlyName string
+	FriendlyName string `json:"friendlyName"`
 	filesystem.Config
-	Logging        logging.Config
-	Interface      Interface
-	HTTP           *net.TCPAddr
-	AccessLog      string
-	NotifyInterval time.Duration
-	Debug          bool
-	FFProbe        ffprobe.Config
-	CachePath      string
+	Logging        logging.Config `json:"logging"`
+	Interface      Interface      `json:"ifname"`
+	HTTP           tcpAddrVar     `json:"http"`
+	AccessLog      string         `json:"accessLog"`
+	NotifyInterval time.Duration  `json:"notifyInterval"`
+	Debug          bool           `json:"debug"`
+	FFProbe        ffprobe.Config `json:"ffProbe"`
+	CachePath      string         `json:"cachePath"`
 }
 
 func (c *Config) SetupFlags() {
 	flag.Var(configFileVar{c}, "config", "path to the json configuration file")
 
 	flag.StringVar(&c.Root, "path", c.Root, "path to the directory to serve")
-	flag.Var(tcpAddrVar{c.HTTP}, "http", "http server port")
+	flag.Var(&c.HTTP, "http", "http server port")
 	flag.Var(&c.Interface, "ifname", "name of the network interface to bind to")
 	flag.StringVar(&c.FriendlyName, "friendlyName", c.FriendlyName, "server friendly name")
 
@@ -356,7 +356,7 @@ func (c *Container) SSDPService(upnp upnp.Device) ssdp.Service {
 				if err != nil {
 					panic(err)
 				}
-				return fmt.Sprintf("http://%s:%d%s", ip, c.Config.HTTP.Port, url)
+				return fmt.Sprintf("http://%s:%d%s", ip, c.Config.HTTP.Addr.Port, url)
 			},
 			UUID:     upnp.UniqueDeviceName(),
 			Devices:  upnp.DeviceTypes(),

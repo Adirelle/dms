@@ -16,8 +16,8 @@ import (
 )
 
 type Config struct {
-	BinPath string
-	Limit   uint
+	BinPath string `json:"binPath"`
+	Limit   uint   `json:"limit"`
 }
 
 type Processor struct {
