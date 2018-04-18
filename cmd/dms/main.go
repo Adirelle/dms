@@ -64,13 +64,6 @@ func main() {
 			BinPath: "ffprobe",
 			Limit:   20,
 		},
-		Cache: struct {
-			DBPath string
-			Size   int
-		}{
-			".dms.db",
-			10000,
-		},
 	}
 
 	config.ParseArgs()
@@ -134,27 +127,29 @@ type Config struct {
 	NotifyInterval time.Duration
 	Debug          bool
 	FFProbe        ffprobe.Config
-	Cache          struct {
-		DBPath string
-		Size   int
-	}
+	CachePath      string
 }
 
 func (c *Config) SetupFlags() {
-	flag.Var(configFileVar{c}, "config", "json configuration file")
+	flag.Var(configFileVar{c}, "config", "path to the json configuration file")
 
-	flag.StringVar(&c.Root, "path", c.Root, "browse root path")
+	flag.StringVar(&c.Root, "path", c.Root, "path to the directory to serve")
 	flag.Var(tcpAddrVar{c.HTTP}, "http", "http server port")
-	flag.Var(&c.Interface, "ifname", "network interface to bind to")
+	flag.Var(&c.Interface, "ifname", "name of the network interface to bind to")
 	flag.StringVar(&c.FriendlyName, "friendlyName", c.FriendlyName, "server friendly name")
 
 	flag.DurationVar(&c.NotifyInterval, "notifyInterval", c.NotifyInterval, "interval between SSPD announces")
 
-	flag.StringVar(&c.AccessLog, "accessLog", "", "path to log HTTP requests")
+	flag.StringVar(&c.AccessLog, "accessLog", "", "path to the HTTP access log file")
 	flag.BoolVar(&c.Debug, "debug", c.Debug, "enable debugging features")
 
 	flag.Var(&c.Logging.Level, "level", "set logging levels")
 	flag.BoolVar(&c.Logging.Quiet, "quiet", c.Logging.Quiet, "only show errors")
+
+	flag.StringVar(&c.CachePath, "cache", "", "path to the cache database")
+
+	flag.StringVar(&c.FFProbe.BinPath, "ffprobe", "ffprobe", "path to the ffprobe executable")
+	flag.UintVar(&c.FFProbe.Limit, "ffprobeLimit", 20, "maximum number of concurrent ffprobes")
 }
 
 func (c *Config) ParseArgs() {
@@ -432,6 +427,10 @@ func (c *Container) ProcessingDirectory(
 }
 
 func (c *Container) FFProbeProcessor(cf *cache.Manager) (p *ffprobe.Processor) {
+	if c.Config.FFProbe.BinPath == "" {
+		return nil
+	}
+
 	l := c.logger("ffprobe")
 	p, err := ffprobe.NewProcessor(c.Config.FFProbe, cf, l)
 	if err != nil {
@@ -464,14 +463,14 @@ func (c *Container) Filesystem() (fs *filesystem.Filesystem, err error) {
 func (c *Container) CacheManager(db *bolt.DB) *cache.Manager {
 	return &cache.Manager{
 		DB:   db,
-		Size: c.Config.Cache.Size,
+		Size: 10000,
 		L:    c.logger("caches"),
 	}
 }
 
 func (c *Container) CacheDB() (*bolt.DB, error) {
-	if c.Config.Cache.DBPath == "" {
+	if c.Config.CachePath == "" {
 		return nil, nil
 	}
-	return bolt.Open(c.Config.Cache.DBPath, 0600, nil)
+	return bolt.Open(c.Config.CachePath, 0600, nil)
 }
