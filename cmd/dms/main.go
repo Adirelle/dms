@@ -66,7 +66,17 @@ func main() {
 		},
 	}
 
+	dumpConfig := false
+	flag.BoolVar(&dumpConfig, "dumpConfig", false, "dump the configuration")
+
 	config.ParseArgs()
+
+	if dumpConfig {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		enc.Encode(config)
+		os.Exit(0)
+	}
 
 	config.Logging.Debug = config.Debug
 	lf := config.Logging.Build()
