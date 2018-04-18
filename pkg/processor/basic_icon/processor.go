@@ -21,7 +21,7 @@ const (
 type Processor struct{}
 
 func (Processor) String() string {
-	return "Processor"
+	return "BasicIconProcessor"
 }
 
 func (b Processor) Process(obj *cds.Object, _ context.Context) {
