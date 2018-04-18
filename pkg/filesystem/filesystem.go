@@ -2,7 +2,6 @@ package filesystem
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"time"
 )
@@ -75,7 +74,7 @@ func (fs *Filesystem) readChildren(id ID, dir string) (ret []ID, err error) {
 	}
 	ret = make([]ID, 0, len(names))
 	for _, name := range names {
-		childPath := path.Join(dir, name)
+		childPath := filepath.Join(dir, name)
 		var accept bool
 		if accept, err = fs.filter(childPath); err != nil {
 			return
